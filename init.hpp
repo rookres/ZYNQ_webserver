@@ -50,7 +50,7 @@ char * Change_Dir(char*pwd_path);
 /*epoll something related*/
 int setnonblocking( int &fd );
 void epoll_addfd( int &epollfd, int &fd );
-
+void epoll_rmfd(int &epollfd,int fd);
 /*Handle Client Something*/
 void read_client_request(int epfd ,struct epoll_event *ev);
 void send_header(int cfd, int code,char *info,char *filetype,int length);

@@ -11,8 +11,7 @@ int main()
 {
     printf_DB("hello,world,the program start 2024年2月21日19点40分\n" );
 
-    signal(SIGPIPE,SIG_IGN);
-    /*在Linux等类Unix系统中，默认情况下，当一个进程尝试向已经关闭了读端的TCP套接字写数据时，
+    signal(SIGPIPE,SIG_IGN); /*在Linux等类Unix系统中，默认情况下，当一个进程尝试向已经关闭了读端的TCP套接字写数据时，
     内核会向该进程发送一个SIGPIPE信号。如果进程没有捕获并处理这个信号，而是默认行为（终止进程），则服务端进程会被立即结束。*/
 
 	char pwd_path[256]="";

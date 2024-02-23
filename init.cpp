@@ -292,6 +292,12 @@ void epoll_addfd( int &epollfd, int &fd )
     setnonblocking( fd );
 }
 
+void epoll_rmfd(int &epollfd,int fd)
+{
+		epoll_ctl(epollfd,EPOLL_CTL_DEL,fd,0);
+	 	close(fd);
+}
+
 
 void send_header(int cfd, int code,char *info,char *filetype,int length)
 {	//发送状态行
@@ -323,26 +329,6 @@ void send_file(int cfd,char *path,struct epoll_event *ev,int epfd,int flag)
 		}
 		char buf[1024]="";
 		int len =0;
-		// while( 1)
-		// {
-
-		// 	len = read(fd,buf,sizeof(buf));
-		// 	if(len < 0)
-		// 	{
-		// 		perror("");
-		// 		break;
-
-		// 	}
-		// 	else if(len == 0)
-		// 	{
-		// 		break;
-		// 	}
-		// 	else
-		// 	{
-		// 	 send(cfd,buf,len,0);
-
-		// 	}
-		// }
 		 while((len=Read(fd,buf,sizeof(buf)))>0)
 		{
 			 send(cfd,buf,len,0);
@@ -365,8 +351,7 @@ void read_client_request(int epfd ,struct epoll_event *ev)
 	 if((Readline(ev->data.fd, buf, sizeof(buf))) <= 0)
 	 {
 	 	printf_DB("The Client Close or Read err\n");
-	 	epoll_ctl(epfd,EPOLL_CTL_DEL,ev->data.fd,ev);
-	 	close(ev->data.fd);
+		epoll_rmfd(epfd,ev->data.fd);
 	 	return ;
 	 }
 	 printf_DB("The first line:%s",buf);
@@ -384,68 +369,7 @@ void read_client_request(int epfd ,struct epoll_event *ev)
 	 if( strcasecmp(method,"get") == 0)
 	 {
 		Get_Handle(content,epfd,ev);
-	 	// //[GET]  [/%E8%8B%A6%E7%93%9C.txt]  [HTTP/1.1]
-	 	// 	char *strfile = content+1;
-	 	// 	strdecode(strfile,strfile);/*乱码转换*/
-	 	// 	 //GET / HTTP/1.1\R\N
-	 	// 	if(*strfile == 0)		//如果没有请求文件,默认请求当前目录
-	 	// 		strfile= "./";
-		// 		// strfile= "./index.html";
-	 	// 	//判断请求的文件是否存在
-	 	// 	struct stat s;
-	 	// 	if(stat(strfile,&s) < 0)//文件不存在
-	 	// 	{
-	 	// 		printf_DB("file not found\n");
-	 	// 		//先发送 报头(状态行  消息头  空行)
-	 	// 		send_header(ev->data.fd, 404,"NOT FOUND",get_mime_type("*.html"),0);
-	 	// 		//发送文件 error.html
-	 	// 		send_file(ev->data.fd,"error.html",ev,epfd,1);
-
-	 	// 	}
-	 	// 	else
-	 	// 	{	 			
-	 	// 		//请求的是一个普通的文件
-	 	// 		if(S_ISREG(s.st_mode))
-	 	// 		{
-	 	// 			printf_DB("file\n");
-	 	// 			//先发送 报头(状态行  消息头  空行)
-	 	// 			send_header(ev->data.fd, 200,"OK",get_mime_type(strfile),s.st_size);
-	 	// 			//发送文件
-	 	// 			send_file(ev->data.fd,strfile,ev,epfd,1);
-
-	 	// 		}
-	 	// 		else if(S_ISDIR(s.st_mode))//请求的是一个目录
-	 	// 		{
-		// 				printf_DB("dir\n");
-		// 				//发送一个列表  网页
-		// 				send_header(ev->data.fd, 200,"OK",get_mime_type("*.html"),0);
-		// 				//发送header.html
-		// 				send_file(ev->data.fd,"dir_header.html",ev,epfd,0);
-
-		// 				struct dirent **mylist=NULL;
-		// 				char buf[1024]="";
-		// 				int len =0;
-		// 				int n = scandir(strfile,&mylist,NULL,alphasort);
-		// 				for(int i=0;i<n;i++)
-		// 				{
-		// 					//printf("%s\n", mylist[i]->d_name);
-		// 					if(mylist[i]->d_type == DT_DIR)//如果是目录
-		// 					{
-		// 						len = sprintf(buf,"<li><a href=%s/ >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
-		// 					}
-		// 					else
-		// 					{
-		// 						len = sprintf(buf,"<li><a href=%s >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
-		// 					}
-
-		// 					send(ev->data.fd,buf,len ,0);
-		// 					free(mylist[i]);
-		// 				}
-		// 				free(mylist);
-		// 				send_file(ev->data.fd,"dir_tail.html",ev,epfd,1);
-	 	// 		}
-	 	// 	}
-		}
+	 }
 }
 
 void Get_Handle(char *content,int epfd,struct epoll_event *ev) 
@@ -469,8 +393,7 @@ void Get_Handle(char *content,int epfd,struct epoll_event *ev)
 
 	 		}
 	 		else
-	 		{	 			
-	 			//请求的是一个普通的文件
+	 		{	 //请求的是一个普通的文件
 	 			if(S_ISREG(s.st_mode))
 	 			{
 	 				printf_DB("file\n");
@@ -478,7 +401,6 @@ void Get_Handle(char *content,int epfd,struct epoll_event *ev)
 	 				send_header(ev->data.fd, 200,"OK",get_mime_type(strfile),s.st_size);
 	 				//发送文件
 	 				send_file(ev->data.fd,strfile,ev,epfd,1);
-
 	 			}
 	 			else if(S_ISDIR(s.st_mode))//请求的是一个目录
 	 			{
