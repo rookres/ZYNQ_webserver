@@ -1,14 +1,19 @@
 #include "init.hpp"
-void perr_exit(const char *s)
+
+void err_exit(const char *reason)
 {
-	perror(s);
+	char err[128];
+	// char *strerror_r(int errnum, char *buf, size_t buflen);
+	// cout << reason << ":" << strerror(errno) << endl;
+	printf("%s:%s",reason,strerror_r(errno,err,128));
+    // exit(1);
+	// perror(s);
 	exit(-1);
 }
 
-int Accept(int fd)
+int Accept(int fd,char* ip,uint16_t* port)
 {
 	int n;
-	char ip[16]="";
 	struct sockaddr_in sa;
 	socklen_t salenptr = sizeof(sa);
 again:
@@ -16,10 +21,11 @@ again:
 		if ((errno == ECONNABORTED) || (errno == EINTR))//如果是被信号中断和软件层次中断,不能退出
 			goto again;
 		else
-			perr_exit("accept error");
+			err_exit("accept error");
 	}
-	   
-	printf_DB("new client ip=%s port=%d\n",inet_ntop(AF_INET,&sa.sin_addr.s_addr,ip,16),ntohs(sa.sin_port));
+	inet_ntop(AF_INET,&sa.sin_addr.s_addr,ip,16);
+	*port=ntohs(sa.sin_port);
+	// printf_DB("new client ip=%s port=%d\n",inet_ntop(AF_INET,&sa.sin_addr.s_addr,ips,16),ntohs(sa.sin_port));
 	return n;
 }
 
@@ -28,7 +34,7 @@ int Bind(int fd, const struct sockaddr *sa, socklen_t salen)
     int n;
 
 	if ((n = bind(fd, sa, salen)) < 0)
-		perr_exit("bind error");
+		err_exit("bind error");
 
     return n;
 }
@@ -38,7 +44,7 @@ int Connect(int fd, const struct sockaddr *sa, socklen_t salen)
     int n;
 
 	if ((n = connect(fd, sa, salen)) < 0)
-		perr_exit("connect error");
+		err_exit("connect error");
 
     return n;
 }
@@ -48,7 +54,7 @@ int Listen(int fd, int backlog)
     int n;
 
 	if ((n = listen(fd, backlog)) < 0)
-		perr_exit("listen error");
+		err_exit("listen error");
 
     return n;
 }
@@ -58,7 +64,7 @@ int Socket(int family, int type, int protocol)
 	int n;
 
 	if ((n = socket(family, type, protocol)) < 0)
-		perr_exit("socket error");
+		err_exit("socket error");
 
 	return n;
 }
@@ -95,7 +101,7 @@ int Close(int fd)
 {
     int n;
 	if ((n = close(fd)) == -1)
-		perr_exit("close error");
+		err_exit("close error");
 
     return n;
 }
@@ -191,7 +197,7 @@ ssize_t Readline(int fd, void *vptr, size_t maxlen)
 	return n;
 }
 
-int tcp4init(short port,const char *IP,short backlog)
+int tcp4init(short port,const char *IP,short backlog,bool reuseAddr)
 {
     struct sockaddr_in serv_addr;
     int lfd = Socket(AF_INET,SOCK_STREAM,0);
@@ -208,8 +214,9 @@ int tcp4init(short port,const char *IP,short backlog)
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port   = htons(port);
 	/*设置端口复用*/
-    int opt = 1;
-	setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+	if(reuseAddr)
+	{    int opt = 1;
+		setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));}
     Bind(lfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr));
 	Listen(lfd,backlog);
     return lfd;
@@ -294,12 +301,12 @@ void epoll_addfd( int &epollfd, int &fd )
 
 void epoll_rmfd(int &epollfd,int fd)
 {
-		epoll_ctl(epollfd,EPOLL_CTL_DEL,fd,0);
+		epoll_ctl(epollfd,EPOLL_CTL_DEL,fd,NULL);
 	 	close(fd);
 }
 
 
-void send_header(int cfd, int code,char *info,char *filetype,int length)
+void send_header(int cfd, int code,const char *info,const char *filetype,int length)
 {	//发送状态行
 	char buf[1024]="";
 	int len =0;
@@ -319,7 +326,7 @@ void send_header(int cfd, int code,char *info,char *filetype,int length)
 	send(cfd,"\r\n",2,0);
 }
 
-void send_file(int cfd,char *path,struct epoll_event *ev,int epfd,int flag)
+void send_file(int epfd,int cfd,const char *path,bool flag)
 {
 		int fd = open(path,O_RDONLY);
 		if(fd <0)
@@ -336,10 +343,11 @@ void send_file(int cfd,char *path,struct epoll_event *ev,int epfd,int flag)
 
 		close(fd);
 		//关闭cfd,下树
-		if(flag==1)
+		if(flag)
 		{
-			close(cfd);
-			epoll_ctl(epfd,EPOLL_CTL_DEL,cfd,ev);
+			// close(cfd);
+			// epoll_ctl(epfd,EPOLL_CTL_DEL,cfd,ev);
+			epoll_rmfd(epfd,cfd);
 		}
 }
 
@@ -348,7 +356,13 @@ void read_client_request(int epfd ,struct epoll_event *ev)
 		//读取请求(先读取第一行)
 	char buf[1024]="";
 	char tmp[1024]="";
-	 if((Readline(ev->data.fd, buf, sizeof(buf))) <= 0)
+	//  if((Readline(ev->data.fd, buf, sizeof(buf))) <= 0)
+	//  {
+	//  	printf_DB("The Client Close or Read err\n");
+	// 	epoll_rmfd(epfd,ev->data.fd);
+	//  	return ;
+	//  }
+		 if((Readline(ev->data.fd, buf, sizeof(buf))) <= 0)
 	 {
 	 	printf_DB("The Client Close or Read err\n");
 		epoll_rmfd(epfd,ev->data.fd);
@@ -359,7 +373,7 @@ void read_client_request(int epfd ,struct epoll_event *ev)
 	 /*把其他行读取,暂时扔掉，之后加有限状态机解析后面的行*/
 	 while( (ret = Readline(ev->data.fd, tmp, sizeof(tmp))) >0)
 	 {
-		// printf_DB("%s",tmp);  
+		printf_DB("%s",tmp);  
 	 }
 	 //解析请求行  GET /a.txt  HTTP/1.1\R\N
 	 char method[256]="",content[256]="", protocol[256]="";
@@ -376,7 +390,10 @@ void Get_Handle(char *content,int epfd,struct epoll_event *ev)
 {
 	//[GET]  [/%E8%8B%A6%E7%93%9C.txt]  [HTTP/1.1]
 	 		char *strfile = content+1;
-	 		strdecode(strfile,strfile);/*乱码转换*/
+			if (strfile[0] == '%' && isxdigit(strfile[1]) && isxdigit(strfile[2]))
+			{
+				strdecode(strfile,strfile);/*%E8%8B%A6%E7%93%9C格式乱码转换*/
+			}
 	 		 //GET / HTTP/1.1\R\N
 	 		if(*strfile == 0)		//如果没有请求文件,默认请求当前目录
 	 			strfile= "./";
@@ -389,7 +406,7 @@ void Get_Handle(char *content,int epfd,struct epoll_event *ev)
 	 			//先发送 报头(状态行  消息头  空行)
 	 			send_header(ev->data.fd, 404,"NOT FOUND",get_mime_type("*.html"),0);
 	 			//发送文件 error.html
-	 			send_file(ev->data.fd,"error.html",ev,epfd,1);
+	 			send_file(epfd,ev->data.fd,"error.html");
 
 	 		}
 	 		else
@@ -400,7 +417,7 @@ void Get_Handle(char *content,int epfd,struct epoll_event *ev)
 	 				//先发送 报头(状态行  消息头  空行)
 	 				send_header(ev->data.fd, 200,"OK",get_mime_type(strfile),s.st_size);
 	 				//发送文件
-	 				send_file(ev->data.fd,strfile,ev,epfd,1);
+	 				send_file(epfd,ev->data.fd,strfile);
 	 			}
 	 			else if(S_ISDIR(s.st_mode))//请求的是一个目录
 	 			{
@@ -408,7 +425,7 @@ void Get_Handle(char *content,int epfd,struct epoll_event *ev)
 						//发送一个列表  网页
 						send_header(ev->data.fd, 200,"OK",get_mime_type("*.html"),0);
 						//发送header.html
-						send_file(ev->data.fd,"dir_header.html",ev,epfd,0);
+						send_file(epfd,ev->data.fd,"dir_header.html");
 
 						struct dirent **mylist=NULL;
 						char buf[1024]="";
@@ -430,7 +447,7 @@ void Get_Handle(char *content,int epfd,struct epoll_event *ev)
 							free(mylist[i]);
 						}
 						free(mylist);
-						send_file(ev->data.fd,"dir_tail.html",ev,epfd,1);
+						send_file(epfd,ev->data.fd,"dir_tail.html");
 	 			}
 	 		}
 }			

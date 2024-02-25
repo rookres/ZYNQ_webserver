@@ -9,7 +9,7 @@
 #include <arpa/inet.h>
 #include <strings.h>
 #include <ctype.h>
-char *get_mime_type(char *name);
+const char *get_mime_type(const char *name);
 int get_line(int sock, char *buf, int size);
 int hexit(char c);//16进制转10进制
 void strencode(char* to, size_t tosize, const char* from);//编码

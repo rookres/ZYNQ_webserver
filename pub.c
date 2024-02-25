@@ -1,8 +1,8 @@
 #include "pub.h"
 //通过文件名字获得文件类型
-char *get_mime_type(char *name)
+const char *get_mime_type(const char *name)
 {
-    char* dot;
+    const char* dot;
 
     dot = strrchr(name, '.');	//自右向左查找‘.’字符;如不存在返回NULL
     /*

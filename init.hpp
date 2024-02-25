@@ -26,10 +26,9 @@
 #endif
 
 #define UDP_BUFFER_SIZE 1024
-
 /*TCP UDP something related*/
-void perr_exit(const char *s);
-int Accept(int fd);
+void err_exit(const char *reason);
+int Accept(int fd,char* ip,uint16_t* port);
 int Bind(int fd, const struct sockaddr *sa, socklen_t salen);
 int Connect(int fd, const struct sockaddr *sa, socklen_t salen);
 int Listen(int fd, int backlog);
@@ -41,19 +40,25 @@ ssize_t Readn(int fd, void *vptr, size_t n);
 ssize_t Writen(int fd, const void *vptr, size_t n);
 static ssize_t ReadOneChar(int fd, char *ptr);
 ssize_t Readline(int fd, void *vptr, size_t maxlen);
-int tcp4init(short port,const char *IP,short backlog);
+int tcp4init(short port,const char *IP,short backlog,bool reuseAddr=true);
 int udp4init(short port,const char *IP);
 ssize_t udp_write();
 ssize_t UDP_Handle(int udpfd);
 
 char * Change_Dir(char*pwd_path);
+
+
+
 /*epoll something related*/
 int setnonblocking( int &fd );
 void epoll_addfd( int &epollfd, int &fd );
 void epoll_rmfd(int &epollfd,int fd);
+
+
+
 /*Handle Client Something*/
 void read_client_request(int epfd ,struct epoll_event *ev);
-void send_header(int cfd, int code,char *info,char *filetype,int length);
-void send_file(int cfd,char *path,struct epoll_event *ev,int epfd,int flag);
+void send_header(int cfd, int code,const char *info,const char *filetype,int length);
+void send_file(int epfd,int cfd,const char *path,bool flag=false);
 void Get_Handle(char *content,int epfd,struct epoll_event *ev) ;
 #endif
