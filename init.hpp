@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <dirent.h>
 #include "pub.h"
+#include "UserEvent.hpp"
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -27,7 +28,7 @@
 
 #define UDP_BUFFER_SIZE 1024
 /*TCP UDP something related*/
-void err_exit(const char *reason);
+void err_exit(const char *reason,bool ExitFlag=true);
 int Accept(int fd,char* ip,uint16_t* port);
 int Bind(int fd, const struct sockaddr *sa, socklen_t salen);
 int Connect(int fd, const struct sockaddr *sa, socklen_t salen);
@@ -38,12 +39,12 @@ ssize_t Write(int fd, const void *ptr, size_t nbytes);
 int Close(int fd);
 ssize_t Readn(int fd, void *vptr, size_t n);
 ssize_t Writen(int fd, const void *vptr, size_t n);
-static ssize_t ReadOneChar(int fd, char *ptr);
+ ssize_t ReadOneChar(int fd, char *ptr);
 ssize_t Readline(int fd, void *vptr, size_t maxlen);
 int tcp4init(short port,const char *IP,short backlog,bool reuseAddr=true);
 int udp4init(short port,const char *IP);
-ssize_t udp_write();
-ssize_t UDP_Handle(int udpfd);
+void udp_write();
+void UDP_Handle(int udpfd);
 
 char * Change_Dir(char*pwd_path);
 
@@ -57,8 +58,8 @@ void epoll_rmfd(int &epollfd,int fd);
 
 
 /*Handle Client Something*/
-void read_client_request(int epfd ,struct epoll_event *ev);
+void read_client_request(int epfd ,UserEvent *Uev);
 void send_header(int cfd, int code,const char *info,const char *filetype,int length);
 void send_file(int epfd,int cfd,const char *path,bool flag=false);
-void Get_Handle(char *content,int epfd,struct epoll_event *ev) ;
+void Get_Handle(int epfd,UserEvent *Uev) ;
 #endif

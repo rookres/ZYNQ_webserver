@@ -137,7 +137,7 @@ int hexit(char c)
 //strencode(encoded_name, sizeof(encoded_name), name);
 void strencode(char* to, size_t tosize, const char* from)
 {
-    int tolen;
+    size_t tolen;
 
     for (tolen = 0; *from != '\0' && tolen + 4 < tosize; ++from) {
         if (isalnum(*from) || strchr("/_.-~", *from) != (char*)0) {

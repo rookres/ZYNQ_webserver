@@ -1,11 +1,11 @@
-#ifndef _LIB_SRC_TIMER_COMMON_H
-#define _LIB_SRC_TIMER_COMMON_H
+#ifndef __TIMER_COMMON_H_
+#define __TIMER_COMMON_H_
 
 #include <stdio.h>
 #include <sys/time.h>
 
 // 获取时间戳 单位：毫秒
-time_t getMSec()
+inline time_t getMSec()
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);

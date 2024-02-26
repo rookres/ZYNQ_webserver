@@ -1,5 +1,5 @@
-#ifndef _LIB_SRC_HEAP_TIMER_H_
-#define _LIB_SRC_HEAP_TIMER_H_
+#ifndef __HEAP_TIMER_H_
+#define __HEAP_TIMER_H_
 
 #include <iostream>
 #include "timer_common.hpp"
@@ -169,7 +169,7 @@ HeapTimerContainer<_UData>::~HeapTimerContainer()
 template <typename _UData>
 void HeapTimerContainer<_UData>::tick()
 {
-   
+   std::cout << "----------tick----------" << std::endl;
     HeapTimer<_UData> *tmp = _array[0];
     time_t cur = getMSec();
     // 循环处理到期的定时器
@@ -184,7 +184,7 @@ void HeapTimerContainer<_UData>::tick()
         {
             break;
         }
-        std::cout << "----------tick----------" << std::endl;
+         
         tmp->handleTimeOut();
         // 将堆顶元素删除，同时生成新的堆顶定时器
         popTimer();

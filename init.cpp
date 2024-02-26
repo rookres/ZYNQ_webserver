@@ -1,14 +1,15 @@
 #include "init.hpp"
 
-void err_exit(const char *reason)
+void err_exit(const char *reason,bool ExitFlag)
 {
 	char err[128];
 	// char *strerror_r(int errnum, char *buf, size_t buflen);
 	// cout << reason << ":" << strerror(errno) << endl;
-	printf("%s:%s",reason,strerror_r(errno,err,128));
+	printf("%s:%s\n",reason,strerror_r(errno,err,128));
     // exit(1);
 	// perror(s);
-	exit(-1);
+	if(ExitFlag)
+		exit(-1);
 }
 
 int Accept(int fd,char* ip,uint16_t* port)
@@ -153,7 +154,7 @@ ssize_t Writen(int fd, const void *vptr, size_t n)
 	return n;
 }
 
-static ssize_t ReadOneChar(int fd, char *ptr)
+ ssize_t ReadOneChar(int fd, char *ptr)
 {
 	static int read_cnt;
 	static char *read_ptr;
@@ -177,7 +178,7 @@ again:
 
 ssize_t Readline(int fd, void *vptr, size_t maxlen)
 {
-	ssize_t n, rc;
+	size_t n, rc;
 	char    c, *ptr;
 
 	ptr = (char*)vptr;
@@ -257,13 +258,13 @@ char * Change_Dir(char*pwd_path)
 	return pwd_path;
 }
 
-ssize_t udp_write()
+void  udp_write()
 {
 	//udp写的话需要ip和端口地址，最好用sendto,收也要是recvfrom等等，先放着,
 	//看LinuxServerCodesLinux(源码)高性能服务器编程游双9-8multi_port.cpp,有读写
 }
 
-ssize_t UDP_Handle(int udpfd)
+void UDP_Handle(int udpfd)
 {
 
 	char buf[ UDP_BUFFER_SIZE ],serverbuf[UDP_BUFFER_SIZE];
@@ -273,7 +274,7 @@ ssize_t UDP_Handle(int udpfd)
 	struct sockaddr_in client_address;
 	socklen_t client_addrlength = sizeof( client_address );
 		/*UDP read，in order to get addr and ip*/
-	int ret = recvfrom( udpfd, buf, UDP_BUFFER_SIZE-1, 0, ( struct sockaddr* )&client_address, &client_addrlength );
+	recvfrom( udpfd, buf, UDP_BUFFER_SIZE-1, 0, ( struct sockaddr* )&client_address, &client_addrlength );
 	inet_ntop(AF_INET, &client_address.sin_addr, ip, client_addrlength);
 	printf_DB( "new UDP connect,ip:%s ,port:%d\n",ip,ntohs(client_address.sin_port));
 	/*return same message*/
@@ -345,51 +346,35 @@ void send_file(int epfd,int cfd,const char *path,bool flag)
 		//关闭cfd,下树
 		if(flag)
 		{
-			// close(cfd);
-			// epoll_ctl(epfd,EPOLL_CTL_DEL,cfd,ev);
-			epoll_rmfd(epfd,cfd);
+			close(cfd);
+			epoll_ctl(epfd,EPOLL_CTL_DEL,cfd,NULL);
 		}
 }
 
-void read_client_request(int epfd ,struct epoll_event *ev)
+void read_client_request(int epollfd ,UserEvent *Uev)
 {
 		//读取请求(先读取第一行)
 	char buf[1024]="";
 	char tmp[1024]="";
-	//  if((Readline(ev->data.fd, buf, sizeof(buf))) <= 0)
-	//  {
-	//  	printf_DB("The Client Close or Read err\n");
-	// 	epoll_rmfd(epfd,ev->data.fd);
-	//  	return ;
-	//  }
-		 if((Readline(ev->data.fd, buf, sizeof(buf))) <= 0)
-	 {
-	 	printf_DB("The Client Close or Read err\n");
-		epoll_rmfd(epfd,ev->data.fd);
-	 	return ;
-	 }
-	 printf_DB("The first line:%s",buf);
-	 int ret =0;
+	Readline(Uev->fd, buf, sizeof(buf));
+	printf_DB("The first line:%s",buf);
+	int ret =0;
 	 /*把其他行读取,暂时扔掉，之后加有限状态机解析后面的行*/
-	 while( (ret = Readline(ev->data.fd, tmp, sizeof(tmp))) >0)
+	 while( (ret = Readline(Uev->fd, tmp, sizeof(tmp))) >0)
 	 {
 		printf_DB("%s",tmp);  
 	 }
 	 //解析请求行  GET /a.txt  HTTP/1.1\R\N
-	 char method[256]="",content[256]="", protocol[256]="";
-	 sscanf(buf,"%[^ ] %[^ ] %[^ \r\n]",method,content,protocol);
-	 printf_DB("method:%s\ncontent:%s\nprotocol:%s\n",method,content,protocol);
-	 //判断是否为get请求  get   GET
-	 if( strcasecmp(method,"get") == 0)
-	 {
-		Get_Handle(content,epfd,ev);
-	 }
+	//  char method[256]="",content[256]="", protocol[256]="";
+	 sscanf(buf,"%[^ ] %[^ ] %[^ \r\n]",Uev->method,Uev->content,Uev->protocol);
+	 printf_DB("method:%s\ncontent:%s\nprotocol:%s\n",Uev->method,Uev->content,Uev->protocol);
+
 }
 
-void Get_Handle(char *content,int epfd,struct epoll_event *ev) 
+void Get_Handle(int epfd,UserEvent *Uev) 
 {
 	//[GET]  [/%E8%8B%A6%E7%93%9C.txt]  [HTTP/1.1]
-	 		char *strfile = content+1;
+	 		char *strfile = Uev->content+1;
 			if (strfile[0] == '%' && isxdigit(strfile[1]) && isxdigit(strfile[2]))
 			{
 				strdecode(strfile,strfile);/*%E8%8B%A6%E7%93%9C格式乱码转换*/
@@ -400,13 +385,14 @@ void Get_Handle(char *content,int epfd,struct epoll_event *ev)
 				// strfile= "./index.html";
 	 		//判断请求的文件是否存在
 	 		struct stat s;
+			
 	 		if(stat(strfile,&s) < 0)//文件不存在
 	 		{
 	 			printf_DB("file not found\n");
 	 			//先发送 报头(状态行  消息头  空行)
-	 			send_header(ev->data.fd, 404,"NOT FOUND",get_mime_type("*.html"),0);
+	 			send_header(Uev->fd, 404,"NOT FOUND",get_mime_type("*.html"),0);
 	 			//发送文件 error.html
-	 			send_file(epfd,ev->data.fd,"error.html");
+	 			send_file(epfd,Uev->fd,"error.html");
 
 	 		}
 	 		else
@@ -415,17 +401,17 @@ void Get_Handle(char *content,int epfd,struct epoll_event *ev)
 	 			{
 	 				printf_DB("file\n");
 	 				//先发送 报头(状态行  消息头  空行)
-	 				send_header(ev->data.fd, 200,"OK",get_mime_type(strfile),s.st_size);
+	 				send_header(Uev->fd, 200,"OK",get_mime_type(strfile),s.st_size);
 	 				//发送文件
-	 				send_file(epfd,ev->data.fd,strfile);
+	 				send_file(epfd,Uev->fd,strfile);
 	 			}
 	 			else if(S_ISDIR(s.st_mode))//请求的是一个目录
 	 			{
 						printf_DB("dir\n");
 						//发送一个列表  网页
-						send_header(ev->data.fd, 200,"OK",get_mime_type("*.html"),0);
+						send_header(Uev->fd, 200,"OK",get_mime_type("*.html"),0);
 						//发送header.html
-						send_file(epfd,ev->data.fd,"dir_header.html");
+						send_file(epfd,Uev->fd,"dir_header.html");
 
 						struct dirent **mylist=NULL;
 						char buf[1024]="";
@@ -443,11 +429,11 @@ void Get_Handle(char *content,int epfd,struct epoll_event *ev)
 								len = sprintf(buf,"<li><a href=%s >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
 							}
 
-							send(ev->data.fd,buf,len ,0);
+							send(Uev->fd,buf,len ,0);
 							free(mylist[i]);
 						}
 						free(mylist);
-						send_file(epfd,ev->data.fd,"dir_tail.html");
+						send_file(epfd,Uev->fd,"dir_tail.html");
 	 			}
 	 		}
 }			
