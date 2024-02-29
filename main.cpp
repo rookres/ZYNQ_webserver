@@ -1,16 +1,21 @@
 #include "init.hpp"
-
-
+#include "threadpool.h"
 #define PORT 8888
 #define BUFFER_SIZE 1024
 #define MAX_EVENT_NUMBER 1024
 #define TCP_BUFFER_SIZE 1024
 #define MAX_BUF_SIZE 1024
+#define MAX_USER_CLIENT 10
 
 const char* IP=NULL;
 int epollfd;
 int pipefd[2];
 
+extern void addfd(UserEvent *Uev, bool one_shot);
+
+    /* 创建线程池 */
+threadpool <UserEvent> *pool = new threadpool<UserEvent>;
+    // if(!pool){err_exit("new");}
 
 void sig_handler(int signum)
 {
@@ -34,6 +39,13 @@ int add_sig(int signum)
 
 }
 
+void show_error(int connfd, const char *info)
+{
+    printf("%s", info);
+    send(connfd, info, strlen(info), 0);
+    close(connfd);
+}
+
 // 超时处理的回调函数
 void timeout_handle(UserEvent *cli)
 {
@@ -49,50 +61,68 @@ void timeout_handle(UserEvent *cli)
 
 void readData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
 {
-    char peekbuf[1]={0};
-    short pbf_size=recv(Uev->fd, peekbuf, sizeof(peekbuf),MSG_PEEK);
-    if(pbf_size == 0)
+    // char peekbuf[1]={0};
+    // short pbf_size=recv(Uev->fd, peekbuf, sizeof(peekbuf),MSG_PEEK);
+    // if(pbf_size == 0)
+    // {
+    //     close(Uev->fd);
+    //     htc->delTimer((Timer<UserEvent> *)Uev->timer);
+    //     epoll_ctl(epollfd, EPOLL_CTL_DEL, Uev->fd, &Uev->event);
+    //     cout << "Remote Connection has been closed, fd:" << Uev->fd << " ip:[" << Uev->ip << ":" << Uev->port << "]" << endl;
+    //     delete Uev;
+    //     return;
+    // }
+    // else if(pbf_size<0) /*其实对这个报错不知道到底如何处理才好,看下那个epolloneshot,epoll LT,ET模式*/
+    //                     /*EAGAIN 或 EWOULDBLOCK：在非阻塞模式下，如果没有数据可读且套接字没有被设置为等待数据就绪，
+    //                     则返回-1并设置errno为EAGAIN或EWOULDBLOCK（对于非阻塞socket而言）。*/
+    // {
+    //     close(Uev->fd);
+    //     htc->delTimer((Timer<UserEvent> *)Uev->timer);
+    //     epoll_ctl(epollfd, EPOLL_CTL_DEL, Uev->fd, &Uev->event);
+    //     cout << "readData err" << endl;
+    //     delete Uev;
+    //     return;
+    // }
+    // else
+    // {
+    //    read_client_request(epollfd,Uev);
+    //     Uev->event.events = EPOLLOUT;
+    //     epoll_ctl(epollfd, EPOLL_CTL_MOD, Uev->fd, &Uev->event);
+    // }
+    if(Uev->read())
+    {
+         pool->append(Uev);         
+    }
+    else
     {
         close(Uev->fd);
         htc->delTimer((Timer<UserEvent> *)Uev->timer);
         epoll_ctl(epollfd, EPOLL_CTL_DEL, Uev->fd, &Uev->event);
         cout << "Remote Connection has been closed, fd:" << Uev->fd << " ip:[" << Uev->ip << ":" << Uev->port << "]" << endl;
         delete Uev;
-        return;
     }
-    else if(pbf_size<0) /*其实对这个报错不知道到底如何处理才好,看下那个epolloneshot,epoll LT,ET模式*/
-                        /*EAGAIN 或 EWOULDBLOCK：在非阻塞模式下，如果没有数据可读且套接字没有被设置为等待数据就绪，
-                        则返回-1并设置errno为EAGAIN或EWOULDBLOCK（对于非阻塞socket而言）。*/
-    {
-        close(Uev->fd);
-        htc->delTimer((Timer<UserEvent> *)Uev->timer);
-        epoll_ctl(epollfd, EPOLL_CTL_DEL, Uev->fd, &Uev->event);
-        cout << "readData err" << endl;
-        delete Uev;
-        return;
-    }
-    else
-    {
-        read_client_request(epollfd,Uev);
-        Uev->event.events = EPOLLOUT;
-        epoll_ctl(epollfd, EPOLL_CTL_MOD, Uev->fd, &Uev->event);
-    }
+
 
 }
 
 void writeData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
 {
-    //判断是否为get请求  get   GET
-	if(strcasecmp(Uev->method,"get") == 0)
-	 {
-        cout << "strcasecmp"<< endl;
-		Get_Handle(epollfd,Uev);
-	 }
-    else
+    // //判断是否为get请求  get   GET
+	// if(strcasecmp(Uev->method,"get") == 0)
+	//  {
+    //     cout << "strcasecmp"<< endl;
+	// 	Get_Handle(epollfd,Uev);
+	//  }
+    // else
+    // {
+    //     char buf[512]={'\0'};
+    //     sprintf(buf,"No Get Request,Only Reply Same Message\nThe Server Reply:%s",Uev->method);
+    //     Write(Uev->fd, buf, sizeof(buf));
+    // }
+        /* 根据写的结果，决定是否关闭连接 */
+    if (!Uev->write())
     {
-        char buf[512]={'\0'};
-        sprintf(buf,"No Get Request,Only Reply Same Message\nThe Server Reply:%s",Uev->method);
-        Write(Uev->fd, buf, sizeof(buf));
+        Uev->close_conn();
     }
     Uev->event.events = EPOLLIN;
     epoll_ctl(epollfd, EPOLL_CTL_MOD, Uev->fd, &Uev->event);
@@ -106,24 +136,30 @@ void writeData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
 // 接收连接回调函数
 void acceptConn(UserEvent *ev, ITimerContainer<UserEvent> *htc)
 {
+    struct sockaddr_in sa;
+    int newcfd = Accept(ev->fd,sa);//接受连接并获取客户端ip和端口信息
+    if (UserEvent::m_user_count >= MAX_USER_CLIENT)
+    {
+        show_error(newcfd, "Internal server busy,m_user_count >= MAX_FD");
+        return;
+    }
     UserEvent *cli = new UserEvent;
-    int newcfd = Accept(ev->fd,cli->ip,&cli->port);//接受连接并获取客户端ip和端口信息
-    setnonblocking(newcfd);        //设置非阻塞
-    cli->fd = newcfd;
-    cli->read_cb = readData;
-    cli->write_cb = writeData;
+    // setnonblocking(newcfd);          //设置非阻塞
+    cli->init(newcfd,sa,readData,writeData);
 
     auto timer = htc->addTimer(15000);      //设置客户端超时值15秒
     timer->setUserData(cli);
     timer->setCallBack(timeout_handle);
     cli->timer = (void *)timer;
 
-    cli->event.events = EPOLLIN;
-    cli->event.data.ptr = (void *) cli;
-    epoll_ctl(epollfd, EPOLL_CTL_ADD, newcfd, &cli->event);
+    addfd(cli, true);
+    // cli->event.events = EPOLLIN;
+    // cli->event.data.ptr = (void *) cli;
+    // epoll_ctl(epollfd, EPOLL_CTL_ADD, newcfd, &cli->event);
 
     cout << "New Connection, ip:[" << cli->ip << ":" << cli->port << "]" << endl;
     // printf_DB("new client ip=%s port=%u\n",cli->ip,cli->port);
+
 }
 
 
@@ -155,7 +191,11 @@ int main()
     
     if(socketpair(AF_UNIX, SOCK_STREAM, 0, pipefd) < 0)
         err_exit("socketpair error");
- 
+    
+    
+
+
+
     int sfd=tcp4init(PORT,IP,128); //创建TCP套接字并绑定监听
     int udpfd=udp4init(PORT,IP); //创建UDP套接字并绑定
 
@@ -168,6 +208,8 @@ int main()
     /*使用epoll监听，并上树*/
     epollfd=epoll_create(1);
     if(epollfd<0) {err_exit("epollfd");}
+
+    UserEvent::m_epollfd = epollfd;
 
     /*赋值初始化*/
     TCPServer.event.events = EPOLLIN;
@@ -207,8 +249,7 @@ int main()
         int epoll_number = epoll_wait(epollfd,events,MAX_EVENT_NUMBER,timeout);
         if(epoll_number < 0) /*其实这个应该不判断，或者判断完不退出，否则无法统一SINGINT或SIGTERM,
                             因为程序大部分时间都消耗在epoll_wait上,此函数会返回-1，虽然调用了sig_handler函数写进pipefd里面，但来不及判断pipefd就退出了*/
-        { 
-            err_exit("\nepoll failure",false);}
+        { err_exit("\nepoll failure",false);}
         else if(epoll_number > 0)
         {
             for(int i=0;i<epoll_number;i++)
@@ -269,6 +310,7 @@ int main()
                 else if(Uev->fd == sfd && Uev->event.events & EPOLLIN)
                 {   
                     acceptConn(Uev, htc);
+
                 }
                 else if(Uev->fd == udpfd &&Uev->event.events & EPOLLIN)/*UDP连接暂时只做回射信息*/
                 {   
@@ -276,13 +318,35 @@ int main()
                     UDP_Handle(Uev->fd);
 
                 }
-                else if(Uev->event.events & EPOLLIN)//TCP连接,即cfd可读变化
+                else if(Uev->event.events & EPOLLIN)//TCP连接,即cfd可读变化,写和读都是主线程在做，http分析和响应由线程池做*/
                 {
-                        Uev->read_cb(Uev, htc);
+                     Uev->read_cb(Uev, htc);
+                    /* 根据读的结果，决定是将任务加到线程池，还是关闭连接 */
+                    // if (Uev->read())
+                    // {
+                    //     pool->append(Uev);          /*这里+????，会不会是 pool->append(users[sockfd])???但是好像+,也不是不行啊,users是数组首地址*/
+                    // }
+                    // else
+                    // {
+                    //     Uev->close_conn();
+                    // }
+
+
                 }
                 else if(Uev->event.events & EPOLLOUT)//TCP连接,即cfd可写变化
                 {
                         Uev->write_cb(Uev, htc);
+                        /* 根据写的结果，决定是否关闭连接 */
+                        // if (!Uev->write())
+                        // {
+                        //     Uev->close_conn();
+                        // }
+                }
+
+                else if(Uev->event.events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
+                {
+                     /* 如果有异常，直接关闭客户连接 */
+                        Uev->close_conn();
                 }
             }
         }

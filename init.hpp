@@ -29,7 +29,10 @@
 #define UDP_BUFFER_SIZE 1024
 /*TCP UDP something related*/
 void err_exit(const char *reason,bool ExitFlag=true);
+
 int Accept(int fd,char* ip,uint16_t* port);
+int Accept(int fd,sockaddr_in &sa);
+
 int Bind(int fd, const struct sockaddr *sa, socklen_t salen);
 int Connect(int fd, const struct sockaddr *sa, socklen_t salen);
 int Listen(int fd, int backlog);

@@ -30,6 +30,23 @@ again:
 	return n;
 }
 
+int Accept(int fd,sockaddr_in &sa)
+{
+	int n;
+	// struct sockaddr_in sa;
+	socklen_t salenptr = sizeof(sa);
+again:
+	if ((n = accept(fd, (struct sockaddr*)&sa, &salenptr)) < 0) {
+		if ((errno == ECONNABORTED) || (errno == EINTR))//如果是被信号中断和软件层次中断,不能退出
+			goto again;
+		else
+			err_exit("accept error");
+	}
+
+	// printf_DB("new client ip=%s port=%d\n",inet_ntop(AF_INET,&sa.sin_addr.s_addr,ips,16),ntohs(sa.sin_port));
+	return n;
+}
+
 int Bind(int fd, const struct sockaddr *sa, socklen_t salen)
 {
     int n;
