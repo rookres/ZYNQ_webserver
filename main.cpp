@@ -5,7 +5,7 @@
 #define MAX_EVENT_NUMBER 1024
 #define TCP_BUFFER_SIZE 1024
 #define MAX_BUF_SIZE 1024
-#define MAX_USER_CLIENT 10
+#define MAX_USER_CLIENT 2
 
 const char* IP=NULL;
 int epollfd;
@@ -56,6 +56,7 @@ void timeout_handle(UserEvent *cli)
     Write(cli->fd,reply,sizeof(reply));
     epoll_ctl(epollfd, EPOLL_CTL_DEL, cli->fd, NULL);
     close(cli->fd);
+    UserEvent::m_user_count--;
     delete cli;
 }
 
@@ -99,6 +100,7 @@ void readData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
         htc->delTimer((Timer<UserEvent> *)Uev->timer);
         epoll_ctl(epollfd, EPOLL_CTL_DEL, Uev->fd, &Uev->event);
         cout << "Remote Connection has been closed, fd:" << Uev->fd << " ip:[" << Uev->ip << ":" << Uev->port << "]" << endl;
+        Uev->m_user_count--;
         delete Uev;
     }
 
@@ -126,7 +128,7 @@ void writeData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
     }
     Uev->event.events = EPOLLIN;
     epoll_ctl(epollfd, EPOLL_CTL_MOD, Uev->fd, &Uev->event);
-    cout << "resetTimer"<< endl;
+    cout << "\nresetTimer\n"<< endl;
     // 重新设置定时器
     htc->resetTimer((Timer<UserEvent> *)Uev->timer, 15000);
 }
@@ -140,7 +142,7 @@ void acceptConn(UserEvent *ev, ITimerContainer<UserEvent> *htc)
     int newcfd = Accept(ev->fd,sa);//接受连接并获取客户端ip和端口信息
     if (UserEvent::m_user_count >= MAX_USER_CLIENT)
     {
-        show_error(newcfd, "Internal server busy,m_user_count >= MAX_FD");
+        show_error(newcfd, "Internal server busy,m_user_count >= MAX_USER_CLIENT\n");
         return;
     }
     UserEvent *cli = new UserEvent;
@@ -244,9 +246,11 @@ int main()
         auto min_expire = htc->getMinExpire();
         /*其实下面这个减，并不是获取之前设定的timeout，而是获得当前定时器还剩多长时间，
         并设置到epoll里面，epoll超时未检测到，则必有定时器过期，然后执行tick()函数。也就是说将超时时间作为心动间隔*/
-        timeout = (min_expire == -1) ? timeout : min_expire - getMSec();
-
-        int epoll_number = epoll_wait(epollfd,events,MAX_EVENT_NUMBER,timeout);
+        printf("min_expire:%ld\n",min_expire);
+        cout<<"min_expire - getMSec()"<<min_expire - getMSec()<<endl;
+        int epolltimeout = (min_expire == -1) ? timeout : min_expire - getMSec();
+        printf("timeout:%d\n",timeout);
+        int epoll_number = epoll_wait(epollfd,events,MAX_EVENT_NUMBER,epolltimeout);
         if(epoll_number < 0) /*其实这个应该不判断，或者判断完不退出，否则无法统一SINGINT或SIGTERM,
                             因为程序大部分时间都消耗在epoll_wait上,此函数会返回-1，虽然调用了sig_handler函数写进pipefd里面，但来不及判断pipefd就退出了*/
         { err_exit("\nepoll failure",false);}
@@ -255,7 +259,7 @@ int main()
             for(int i=0;i<epoll_number;i++)
             {
                 UserEvent *Uev =  (UserEvent *) events[i].data.ptr;
-                if(Uev->fd == pipefd[0] && Uev->event.events & EPOLLIN)/*其实这个最好放最前面来判断，如果放在最后或者中间，
+                if(Uev->fd == pipefd[0] && (Uev->event.events & EPOLLIN))/*其实这个最好放最前面来判断，如果放在最后或者中间，
                                                                         当cfd关闭时,删除用户Event时，会造成内存泄漏*/
                 {
                     memset(sigbuf,'\0',sizeof(sigbuf));

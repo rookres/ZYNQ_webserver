@@ -45,10 +45,13 @@ void removefd(int epollfd, int fd)
     close(fd);
 }
 
-void modfd(int epollfd, int fd, int ev)
+void modfd(int epollfd, int fd, int ev,UserEvent *Uev=NULL)
 {
-    epoll_event event;
-    event.data.fd = fd;
+    epoll_event event=Uev->event;
+    Uev->fd=fd;
+    // if(!Uev)Uev->fd=fd;
+    // else event.data.fd = fd;
+    
     event.events = ev | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;
     epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &event);
 }
@@ -70,6 +73,7 @@ void UserEvent::close_conn(bool real_close)     /*声明 函数参数已经有�
 void UserEvent::init(int newcfd, const sockaddr_in &sa,readHandle readData,writeHandle writeData)
 {
     fd = newcfd;
+    m_sockfd=newcfd;
     m_address = sa;
     inet_ntop(AF_INET,&sa.sin_addr.s_addr,ip,32);
 	port=ntohs(sa.sin_port);
@@ -107,18 +111,21 @@ void UserEvent::init()
 /* 循环读取客户数据，直到无数据可读或者对方关闭连接 */
 bool UserEvent::read()          /*此函数在main函数里面调用*/
 {
+    printf("read 111\n");
     if (m_read_idx >= READ_BUFFER_SIZE)
         return false;
 
     int bytes_read = 0;
     while(true)
     {
+         printf("bytes_read before\n");
         bytes_read = recv(m_sockfd, m_read_buf + m_read_idx, READ_BUFFER_SIZE - m_read_idx, 0);
+        printf("bytes_read %d\n",bytes_read);
         if (bytes_read == -1)
         {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
                 break;
-
+            printf("recv error:eason %s\n",strerror(errno));
             return false;
         }
         else if (bytes_read == 0)       /*此处应该返回true吧?答：不应返回true，这个对方已经关闭了,main函数里面是要读完后加入线程池的*/
@@ -129,20 +136,20 @@ bool UserEvent::read()          /*此函数在main函数里面调用*/
 
         m_read_idx += bytes_read;
     }
-
     return true;
 }
 
 /* 写HTTP响应 */
 bool UserEvent::write()       /*此函数在main函数里面调用, main函数会根据返回值决定是否关闭连接*/
 {
+    return true;/*暂时*/
     int temp = 0;
     int bytes_have_send = 0;
     int bytes_to_send = m_write_idx;
 
     if (bytes_to_send == 0)
     {
-        modfd(m_epollfd, m_sockfd, EPOLLIN);
+        modfd(m_epollfd, m_sockfd, EPOLLIN,this);
         init();
         return true;
     }
@@ -156,7 +163,7 @@ bool UserEvent::write()       /*此函数在main函数里面调用, main函数�
              * 服务器无法立即接收到同一客户的下一个请求，但这可以保证连接的完整性 */
             if (errno == EAGAIN)
             {
-                modfd(m_epollfd, m_sockfd, EPOLLOUT);
+                modfd(m_epollfd, m_sockfd, EPOLLOUT,this);
                 return true;
             }
 
@@ -173,12 +180,12 @@ bool UserEvent::write()       /*此函数在main函数里面调用, main函数�
             if (m_linger)
             {
                 init();
-                modfd(m_epollfd, m_sockfd, EPOLLIN);
+                modfd(m_epollfd, m_sockfd, EPOLLIN,this);
                 return true;
             }
             else
             {
-                modfd(m_epollfd, m_sockfd, EPOLLIN);    /*main函数会根据返回值决定是否关闭连接*/
+                modfd(m_epollfd, m_sockfd, EPOLLIN,this);    /*main函数会根据返回值决定是否关闭连接*/
                 return false;
             }
         }
@@ -189,9 +196,10 @@ bool UserEvent::write()       /*此函数在main函数里面调用, main函数�
 void UserEvent::process()
 {
     HTTP_CODE read_ret = process_read();
+    printf("read_ret=%s\n",read_ret==NO_REQUEST ? "NO_REQUEST":"-1");
     if (read_ret == NO_REQUEST)
     {
-        modfd(m_epollfd, m_sockfd, EPOLLIN);
+        modfd(m_epollfd, m_sockfd, EPOLLIN,this);
         return ;
     }
 
@@ -201,7 +209,7 @@ void UserEvent::process()
         close_conn();
     }
 
-     modfd(m_epollfd, m_sockfd, EPOLLOUT);
+     modfd(m_epollfd, m_sockfd, EPOLLOUT,this);
 }
 
 /* 主状态机,(看书第八章,也可观看my word文档的有限状态机分析http协议实例) */

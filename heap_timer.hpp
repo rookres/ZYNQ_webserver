@@ -82,7 +82,7 @@ public:
     Timer<_UData> *addTimer(time_t timeout)  override;
     void delTimer(Timer<_UData> *timer)  override;
     void resetTimer(Timer<_UData> *timer, time_t timeout)  override;
-    int getMinExpire() override;
+    time_t getMinExpire() override;
     Timer<_UData> *top();
     void popTimer();
 
@@ -265,7 +265,7 @@ void HeapTimerContainer<_UData>::resetTimer(Timer<_UData> *timer, time_t timeout
 
 // 获取容器中超时值最小的值
 template <typename _UData>
-int HeapTimerContainer<_UData>::getMinExpire()
+time_t HeapTimerContainer<_UData>::getMinExpire()
 {
     Timer<_UData> * timer = top();
     if(timer)

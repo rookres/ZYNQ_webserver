@@ -78,7 +78,7 @@ public:
     virtual Timer<_UData> *addTimer(time_t timeout) = 0;
     virtual void delTimer(Timer<_UData> *timer) = 0;
     virtual void resetTimer(Timer<_UData> *timer, time_t timeout) = 0;
-    virtual int getMinExpire() = 0;
+    virtual time_t getMinExpire() = 0;
 };
 
 #endif

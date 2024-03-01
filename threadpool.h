@@ -60,7 +60,7 @@ threadpool<T>::threadpool(int thread_number, int max_requests): m_thread_number(
             delete[] m_threads;
             throw std::exception();
         }
-        printf("create the %dth thread,tid %ld\n", i,*m_threads);  
+        printf("create the %dth thread,tid %ld\n", i,m_threads[i]);  
         if (pthread_detach(m_threads[i]))  //脱离
         {
             delete[] m_threads;
