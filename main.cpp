@@ -104,7 +104,6 @@ void readData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
         delete Uev;
     }
 
-
 }
 
 void writeData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
@@ -124,6 +123,7 @@ void writeData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
         /* 根据写的结果，决定是否关闭连接 */
     if (!Uev->write())
     {
+        cout << "\nUev->write Fasle\n"<< endl;
         Uev->close_conn();
     }
     Uev->event.events = EPOLLIN;
@@ -149,7 +149,7 @@ void acceptConn(UserEvent *ev, ITimerContainer<UserEvent> *htc)
     // setnonblocking(newcfd);          //设置非阻塞
     cli->init(newcfd,sa,readData,writeData);
 
-    auto timer = htc->addTimer(15000);      //设置客户端超时值15秒
+    auto timer = htc->addTimer(150000);      //设置客户端超时值150秒
     timer->setUserData(cli);
     timer->setCallBack(timeout_handle);
     cli->timer = (void *)timer;
@@ -246,10 +246,10 @@ int main()
         auto min_expire = htc->getMinExpire();
         /*其实下面这个减，并不是获取之前设定的timeout，而是获得当前定时器还剩多长时间，
         并设置到epoll里面，epoll超时未检测到，则必有定时器过期，然后执行tick()函数。也就是说将超时时间作为心动间隔*/
-        printf("min_expire:%ld\n",min_expire);
-        cout<<"min_expire - getMSec()"<<min_expire - getMSec()<<endl;
+        // printf("min_expire:%ld\n",min_expire);
+        // cout<<"min_expire - getMSec()"<<min_expire - getMSec()<<endl;
         int epolltimeout = (min_expire == -1) ? timeout : min_expire - getMSec();
-        printf("timeout:%d\n",timeout);
+        // printf("timeout:%d\n",timeout);
         int epoll_number = epoll_wait(epollfd,events,MAX_EVENT_NUMBER,epolltimeout);
         if(epoll_number < 0) /*其实这个应该不判断，或者判断完不退出，否则无法统一SINGINT或SIGTERM,
                             因为程序大部分时间都消耗在epoll_wait上,此函数会返回-1，虽然调用了sig_handler函数写进pipefd里面，但来不及判断pipefd就退出了*/

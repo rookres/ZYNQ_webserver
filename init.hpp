@@ -54,7 +54,7 @@ char * Change_Dir(char*pwd_path);
 
 
 /*epoll something related*/
-int setnonblocking( int &fd );
+int setnonblocking( int fd );
 void epoll_addfd( int &epollfd, int &fd );
 void epoll_rmfd(int &epollfd,int fd);
 

@@ -299,7 +299,7 @@ void UDP_Handle(int udpfd)
 	sendto( udpfd, serverbuf, UDP_BUFFER_SIZE-1, 0, ( struct sockaddr* )&client_address, client_addrlength );
 }
 
-int setnonblocking( int &fd )
+int setnonblocking( int fd )
 {
     int old_option = fcntl( fd, F_GETFL );
     int new_option = old_option | O_NONBLOCK;

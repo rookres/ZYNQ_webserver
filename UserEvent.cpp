@@ -1,5 +1,6 @@
 #include "UserEvent.hpp"
 #include <fcntl.h>
+#include "init.hpp"
 /* 定义HTTP响应的一些状态信息 */
 const char *ok_200_title = "OK";
 const char *error_400_title = "Bad Request";
@@ -12,19 +13,19 @@ const char *error_500_title = "Internal Error";
 const char *error_500_form = "There was an unusual problem serving the requested file.\n";
 
 /* 网站的根目录 */
-const char *doc_root = "/home/tronlong/test/webserver";
+const char *doc_root = "/home/tronlong/test/webserver/Resource";
 
 
 int UserEvent::m_user_count = 0;
 int UserEvent::m_epollfd = -1;
 
-int setnonblocking(int fd)
-{
-    int old_option = fcntl(fd, F_GETFL);
-    int new_option = old_option | O_NONBLOCK;
-    fcntl(fd, F_SETFL, new_option);
-    return old_option;
-}
+// int setnonblocking(int fd)
+// {
+//     int old_option = fcntl(fd, F_GETFL);
+//     int new_option = old_option | O_NONBLOCK;
+//     fcntl(fd, F_SETFL, new_option);
+//     return old_option;
+// }
 
 void addfd(UserEvent *Uev, bool one_shot)
 {
@@ -47,13 +48,11 @@ void removefd(int epollfd, int fd)
 
 void modfd(int epollfd, int fd, int ev,UserEvent *Uev=NULL)
 {
-    epoll_event event=Uev->event;
     Uev->fd=fd;
     // if(!Uev)Uev->fd=fd;
     // else event.data.fd = fd;
-    
-    event.events = ev | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;
-    epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &event);
+    Uev->event.events = ev | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;
+    epoll_ctl(epollfd, EPOLL_CTL_MOD, Uev->fd, &Uev->event);
 }
 
 // int UserEvent::m_user_count = 0;
@@ -111,16 +110,14 @@ void UserEvent::init()
 /* 循环读取客户数据，直到无数据可读或者对方关闭连接 */
 bool UserEvent::read()          /*此函数在main函数里面调用*/
 {
-    printf("read 111\n");
     if (m_read_idx >= READ_BUFFER_SIZE)
         return false;
 
     int bytes_read = 0;
     while(true)
     {
-         printf("bytes_read before\n");
         bytes_read = recv(m_sockfd, m_read_buf + m_read_idx, READ_BUFFER_SIZE - m_read_idx, 0);
-        printf("bytes_read %d\n",bytes_read);
+        printf("bytes_read: %d\n",bytes_read);
         if (bytes_read == -1)
         {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -142,11 +139,10 @@ bool UserEvent::read()          /*此函数在main函数里面调用*/
 /* 写HTTP响应 */
 bool UserEvent::write()       /*此函数在main函数里面调用, main函数会根据返回值决定是否关闭连接*/
 {
-    return true;/*暂时*/
     int temp = 0;
     int bytes_have_send = 0;
     int bytes_to_send = m_write_idx;
-
+    printf("\n\nbytes_to_send:%d\n",bytes_to_send);
     if (bytes_to_send == 0)
     {
         modfd(m_epollfd, m_sockfd, EPOLLIN,this);
@@ -186,7 +182,8 @@ bool UserEvent::write()       /*此函数在main函数里面调用, main函数�
             else
             {
                 modfd(m_epollfd, m_sockfd, EPOLLIN,this);    /*main函数会根据返回值决定是否关闭连接*/
-                return false;
+                // return false;
+                return true;/*此处暂时不断开，因为没解析完整的http请求,暂时不断掉连接*/
             }
         }
     }
@@ -196,7 +193,7 @@ bool UserEvent::write()       /*此函数在main函数里面调用, main函数�
 void UserEvent::process()
 {
     HTTP_CODE read_ret = process_read();
-    printf("read_ret=%s\n",read_ret==NO_REQUEST ? "NO_REQUEST":"-1");
+    printf("read_ret = process_read()%s\n",read_ret==FILE_REQUEST ? "FILE_REQUEST":"-1");
     if (read_ret == NO_REQUEST)
     {
         modfd(m_epollfd, m_sockfd, EPOLLIN,this);
@@ -210,6 +207,7 @@ void UserEvent::process()
     }
 
      modfd(m_epollfd, m_sockfd, EPOLLOUT,this);
+    printf(" modfd(m_epollfd, m_sockfd, EPOLLOUT,this) haa Executed\n");
 }
 
 /* 主状态机,(看书第八章,也可观看my word文档的有限状态机分析http协议实例) */
@@ -222,6 +220,7 @@ UserEvent::HTTP_CODE UserEvent::process_read()
     while (((m_checked_state == CHECK_STATE_CONTENT) && (line_status == LINE_OK))
         || ((line_status = parse_line()) == LINE_OK))
     {
+        printf("line_status = parse_line())%s\n",line_status == LINE_OK ? "LINE_OK":"LINE_Bad");
         text = get_line();
         m_start_line = m_checked_idx;       /*记录下一行的真实位置*/
         printf("got 1 http line: %s\n", text);
@@ -231,16 +230,20 @@ UserEvent::HTTP_CODE UserEvent::process_read()
             case CHECK_STATE_REQUESTLINE:            /*第一个状态，分析请求*/
             {
                 ret = parse_request_line(text);
+                printf(" ret = parse_request_line(text)=%s\n",ret==NO_REQUEST ? "NO_REQUEST":"BAD_REQUEST");
                 if (ret == BAD_REQUEST)
                 {
                     return BAD_REQUEST;
                 }
+
+                return do_request();/*放在这是为了只解析Get行，之后为了分析完整的http请求，这个要去掉*/
                 break;
             }
             case CHECK_STATE_HEADER:             /*第二个状态，分析头部字段*/
             {
 
                 ret = parse_headers(text);
+                printf(" ret = parse_headers%s\n",ret==GET_REQUEST ? "GET_REQUEST":"BAD_REQUEST");
                 if (ret == BAD_REQUEST)
                 {
                     return BAD_REQUEST;
@@ -318,9 +321,11 @@ bool UserEvent::process_write(HTTP_CODE ret)
         }
         case FILE_REQUEST:
         {
+            printf("\n\n process_write Switch FILE_REQUEST\n");
             add_status_line(200, ok_200_title);
             if (m_file_stat.st_size != 0)
             {
+                printf("\n process_write Switch FILE_REQUEST in if\n\n");
                 add_headers(m_file_stat.st_size);
                 m_iv[0].iov_base = m_write_buf;
                 m_iv[0].iov_len = m_write_idx;
@@ -331,6 +336,7 @@ bool UserEvent::process_write(HTTP_CODE ret)
             }
             else
             {
+                printf("\n\n process_write Switch FILE_REQUEST in else\n\n");
                 const char *ok_string = "<html><body></body></html>";
                 add_headers(strlen(ok_string));
                 if (!add_content(ok_string))
@@ -355,6 +361,17 @@ bool UserEvent::process_write(HTTP_CODE ret)
 /* 解析HTTP请求行，获得请求方法、目标URL，以及HTTP版本号 */
 UserEvent::HTTP_CODE UserEvent::parse_request_line(char *text)
 {
+    // char method[256]="";
+	//  char content[256]="";
+	//  char protocol[256]="";
+    // sscanf(text,"%[^ ] %[^ ] %[^ \r\n]",method,content,protocol);
+    // //判断是否为get请求  get   GET
+	//  if( strcasecmp(method,"get") == 0)
+    //  {
+    //     m_method = GET;
+    //  }
+    //  m_url=strcpy(m_url,content);
+
     m_url = strpbrk(text, " \t");   
     if (!m_url)             /*如果请求行中没有空白字符或“\t”，则HTTP请求必有问题*/
     {
@@ -384,17 +401,27 @@ UserEvent::HTTP_CODE UserEvent::parse_request_line(char *text)
     {
         return BAD_REQUEST;
     }
-    if (strncasecmp(m_url, "http://", 7) == 0)  /*检查URL是否合法*/
+    // if (strncasecmp(m_url, "http://", 7) == 0)  /*检查URL是否合法*/
+    // {
+    //     m_url += 7;
+    //     m_url = strchr(m_url, '/');
+    // }
+
+    // if (!m_url || m_url[0] != '/')
+    // {
+    //     return BAD_REQUEST;
+    // }
+    /*下面是自己改的，没用http://,从这开始*/
+    if (strncasecmp(m_url, "/", 1) == 0)  /*检查URL是否合法*/
     {
-        m_url += 7;
+        // m_url += 1;
         m_url = strchr(m_url, '/');
     }
-
     if (!m_url || m_url[0] != '/')
     {
         return BAD_REQUEST;
     }
-
+    /*到这结束*/
     m_checked_state = CHECK_STATE_HEADER;    /*HTTP请求行处理完毕，状态转移到头部字段的分析*/
     return NO_REQUEST;
 }
@@ -402,7 +429,9 @@ UserEvent::HTTP_CODE UserEvent::parse_request_line(char *text)
 /* 解析HTTP请求的一个头部信息 */
 UserEvent::HTTP_CODE UserEvent::parse_headers(char *text)
 {
+     return GET_REQUEST;
     /* 遇到空行，表示头部字段解析完毕 */
+    printf("text[0]:%c\n",text[0]);
     if (text[0] == '\0')
     {
         /* 如果HTTP请求有消息体，则还需要读取m_content_length字节的消息体，状态机转移到CHECK_STATE_CONTENT状态 */
@@ -480,10 +509,40 @@ UserEvent::HTTP_CODE UserEvent::do_request()
 
     if (S_ISDIR(m_file_stat.st_mode))
     {
+        				send_header(this->fd, 200,"OK",get_mime_type("*.html"),0);
+						//发送header.html
+						send_file(this->m_epollfd,this->fd,"dir_header.html",0);
+
+						struct dirent **mylist=NULL;
+						char buf[1024]="";
+						int len =0;
+						int n = scandir(m_real_file,&mylist,NULL,alphasort);
+						for(int i=0;i<n;i++)
+						{
+							//printf("%s\n", mylist[i]->d_name);
+							if(mylist[i]->d_type == DT_DIR)//如果是目录
+							{
+								len = sprintf(buf,"<li><a href=%s/ >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
+							}
+							else
+							{
+								len = sprintf(buf,"<li><a href=%s >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
+							}
+
+							
+
+							send(this->fd,buf,len ,0);
+
+							free(mylist[i]);
+						}
+						free(mylist);
+
+
+			send_file(this->m_epollfd,this->fd,"dir_tail.html");
 
         return BAD_REQUEST;
     }
-
+    printf("*****The m_real_file is %s\n",m_real_file);
     int fd = open(m_real_file, O_RDONLY);
     m_file_address = (char *)mmap(0, m_file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
@@ -507,12 +566,14 @@ UserEvent::LINE_STATUS UserEvent::parse_line()
                                                 没有读取到一个完整的行，返回LINE_OPEN以表示还需要继续去客户数据才能进一步分析*/
             if ((m_checked_idx + 1) == m_read_idx)
             {
+                printf("in parse_line func LINE_OPEN\n");
                 return LINE_OPEN;
             }
             else if (m_read_buf[m_checked_idx + 1] == '\n')     /*如果下一个字符时"\n"，则说明我们成功读取一个完整的行*/
             {
                 m_read_buf[m_checked_idx++] = '\0';
                 m_read_buf[m_checked_idx++] = '\0';
+                printf("in parse_line func LINE_OK\n");
                 return LINE_OK;
             }
             return LINE_BAD;                     /*否则的话，说明客户发送的HTTP请求存在语法问题*/
@@ -523,12 +584,15 @@ UserEvent::LINE_STATUS UserEvent::parse_line()
             {
                 m_read_buf[ m_checked_idx-1 ] =  '\0';
                 m_read_buf[ m_checked_idx++ ] =  '\0';
+                printf("in parse_line func LINE_OK\n");
                 return LINE_OK;
             }
+            printf("in parse_line func LINE_BAD\n");
              return LINE_BAD;
         }
     }
      /*如果所有内容都分析完毕也没有遇到"\r"字符，则返回LINE_OPEN，表示还需要继续读取客户数据才能进一步分析*/
+      printf("in parse_line func LINE_OPEN\n");
     return LINE_OPEN;
 }
 
