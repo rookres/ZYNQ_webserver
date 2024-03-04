@@ -44,6 +44,8 @@ const char *get_mime_type(const char *name)
         return "audio/midi";
     if (strcmp(dot, ".mp3") == 0)
         return "audio/mpeg";
+    if (strcmp(dot, ".mp4") == 0)
+        return "video/mp4";
     if (strcmp(dot, ".ogg") == 0)
         return "application/ogg";
     if (strcmp(dot, ".pac") == 0)

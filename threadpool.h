@@ -60,7 +60,7 @@ threadpool<T>::threadpool(int thread_number, int max_requests): m_thread_number(
             delete[] m_threads;
             throw std::exception();
         }
-        printf("create the %dth thread,tid %ld\n", i,m_threads[i]);  
+        // printf("create the %dth thread,tid %ld\n", i,m_threads[i]);  
         if (pthread_detach(m_threads[i]))  //脱离
         {
             delete[] m_threads;
@@ -107,7 +107,7 @@ void threadpool<T>::run()
 {
     while(!m_stop)
     {
-        printf("block here %ld\n",pthread_self());
+        // printf("block here %ld\n",pthread_self());
         m_queuestat.wait();
         m_queuelocker.lock();
         if (m_workqueue.empty())
@@ -115,7 +115,7 @@ void threadpool<T>::run()
             m_queuelocker.unlock();
             continue;
         }
-        printf("\nthe thread is used ,tidblock  %ld\n",pthread_self());
+        // printf("\nthe thread is used ,tidblock  %ld\n",pthread_self());
         T *request = m_workqueue.front();
         m_workqueue.pop_front();
         m_queuelocker.unlock();

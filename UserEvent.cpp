@@ -62,6 +62,7 @@ void UserEvent::close_conn(bool real_close)     /*声明 函数参数已经有�
 {
     if (real_close && (m_sockfd != -1))
     {
+        cout << "\nUserEvent::close_conn(n"<< endl;
         removefd(m_epollfd, m_sockfd);          /*只是移走监听，没有删除吗？ 删除了，在removefd函数里面*/
         m_sockfd = -1;
         m_user_count--; /* 关闭一个连接时，将客户总量减1 */
@@ -100,6 +101,7 @@ void UserEvent::init()
     m_checked_idx = 0;
     m_read_idx = 0;
     m_write_idx = 0;
+    bytes_have_send=0;//le
 
     memset(m_read_buf, '\0', READ_BUFFER_SIZE);
     memset(m_write_buf, '\0', WRITE_BUFFER_SIZE);
@@ -136,64 +138,301 @@ bool UserEvent::read()          /*此函数在main函数里面调用*/
     return true;
 }
 
+// /* 写HTTP响应 */
+// bool UserEvent::write()       /*此函数在main函数里面调用, main函数会根据返回值决定是否关闭连接*/
+// {
+//     int temp = 0;
+//     int bytes_have_send = 0;
+//     int bytes_to_send = m_write_idx;
+//     printf("\n\nbytes_to_send:%d\n",bytes_to_send);
+//     if (bytes_to_send == 0)
+//     {
+//          printf("  if (bytes_to_send == 0),***return true\n");
+//         modfd(m_epollfd, m_sockfd, EPOLLIN,this);
+//         init();
+//         return true;
+//     }
+//     int old_option = fcntl( fd, F_GETFL );
+//     int new_option = old_option & ~O_NONBLOCK;
+//     fcntl( fd, F_SETFL, new_option );
+//     while(true)
+//     {
+//         temp = writev(m_sockfd, m_iv, m_iv_count);
+//         printf(" writev number,%d\n",temp);
+//         if (temp <= -1)
+//         {
+//             /* 如果TCP写缓冲区没有空间，则等待下一轮EPOLLOUT事件。虽然在此期间，
+//              * 服务器无法立即接收到同一客户的下一个请求，但这可以保证连接的完整性 */
+//             if (errno == EAGAIN)
+//             {
+//                 modfd(m_epollfd, m_sockfd, EPOLLOUT,this);
+//                  printf(" errno == EAGAIN,***return true\n");
+//                 return true;
+//             }
+//             // else if(errno=EPIPE)
+//             // {
+//             //     continue;
+//             // }
+
+//             unmap();
+//             printf(" ************,***return false%s,\n",strerror(errno));
+//             return false;
+//         }
+//         // if(m_write_idx-temp>=0 &&m_write_idx!=-1) 
+//         // {
+//             // m_write_idx-=temp;
+//         //     printf(" m_write_idx,%d\n",m_write_idx);
+//         // }
+//         // else
+//         // {
+//         //     m_write_idx=m_write_idx;
+//         // }
+//         // bytes_to_send -= temp;
+//         // bytes_have_send += temp;
+//         // if (bytes_to_send <= bytes_have_send)
+//         bytes_to_send -= temp;
+        
+//         bytes_have_send += temp;
+//         if (m_write_idx-temp==0)
+//         {
+//             printf("  if (m_write_idx <=0),***return true%d\n",m_write_idx);
+//             printf(" if (bytes_to_send <= bytes_have_send),***return true\n");
+//             m_write_idx=0;
+//             /* 发送HTTP响应成功，根据HTTP请求中的Connection字段决定是否理解关闭连接 */
+//             unmap();
+//             if (m_linger)
+//             {
+//                 init();
+//                 modfd(m_epollfd, m_sockfd, EPOLLIN,this);
+//                 return true;
+//             }
+//             else
+//             {
+//                 modfd(m_epollfd, m_sockfd, EPOLLIN,this);    /*main函数会根据返回值决定是否关闭连接*/
+//                 // return false;
+//                 // init();
+//                 return true;/*此处暂时不断开，因为没解析完整的http请求,暂时不断掉连接*/
+//             }
+//         }
+//     }
+// }
+
+/* 写HTTP响应,此处逻辑不对，
+（1）如果这次循环只把一部分数据写到socket缓冲区然后缓冲区满了，writev系统调用返回-1（socket是非阻塞的），循环退出，那下次再次调用write时会不会把这部分数据重复写呢。
+（2）而且这里通过循环把数据集中写到socket缓冲区里的，它是怎么记录下次从用户缓冲区的哪个地方开始写的。
+（3）另外bytes_to_send <= bytes_have_send这个条件也看的不太懂，结束条件不应该是bytes_to_send等于0吗。
+    要是小文件之类的,暂时看不出问题，但是要是gif大几M的文件就会出现卡顿。
+ 解决方法：
+ 1.在UserEvent::write()函数里重新设置为阻塞,int old_option = fcntl( fd, F_GETFL );int new_option = old_option & ~O_NONBLOCK;fcntl( fd, F_SETFL, new_option );
+ 让内核去操作等待，但此时主线程会阻塞,影响客户响应。放在之前源代码while循环前就可以。
+ 2.在在循环体内，首先调用writev尝试写入数据，然后根据返回值和错误码判断是否需要继续写入，
+ 同时更新已写入的数据量以及iov数组中的偏移量，以便下一次调用时从上次写入的位置开始继续尝试。
+*/
+// bool UserEvent::write()       /*此函数在main函数里面调用, main函数会根据返回值决定是否关闭连接*/
+// // 假设我们有一个iov数组，包含了多个待发送的数据缓冲区
+// {
+// //     struct iovec iov[3]; // 假设有三个缓冲区
+// size_t total_len = 0;
+
+// // 初始化iov数组
+// // ...
+
+// while (total_len < m_write_idx) { // iov_len_sum是所有iov缓冲区的总长度
+//     // ssize_t written_bytes = writev(m_sockfd, iov, sizeof(iov)/sizeof(iov[0]));
+//       ssize_t  written_bytes  =  writev(m_sockfd, m_iv, m_iv_count);
+
+//     if (written_bytes == -1) {
+//         if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+//             // 没有足够的缓冲区空间或资源暂时不可用，可以稍后再试
+//             // 此处可以结合select/poll/epoll等I/O多路复用技术等待套接字变为可写
+//                  modfd(m_epollfd, m_sockfd, EPOLLOUT,this);
+//                  printf(" errno == EAGAIN,***return true\n");
+//                 return true;
+//             // continue;
+//         } else if (errno == EINTR) {              //此处注册信号要重启系统应用
+//             // 处理被信号打断的情况，可以选择重试
+            
+//             continue;
+//         } else if (errno == EPIPE || errno == ECONNRESET) {
+//             // 发生了Broken pipe（连接已关闭）或连接重置错误
+//             // 这种情况下通常停止写入，处理错误或关闭连接
+//             return false;
+//             break;
+//         } else {
+//             // 其他错误，打印错误日志并处理
+//             perror("writev failed");
+//             break;
+//         }
+//     } else if (written_bytes == 0) {
+//         // 写入0字节，通常表示连接已经关闭
+//         break;
+//     }
+
+//     // 更新已经写入的总字节数
+//     total_len += written_bytes;
+
+//     // 移动iov数组中已写入部分，准备下一轮写入,牛逼！！！！！！！！！(破音),可惜不是我写出来的
+//     for (size_t i = 0; i < m_iv_count; ++i) {
+//         if (m_iv[i].iov_len <= written_bytes) {
+//             written_bytes -= m_iv[i].iov_len;   /*当写入字节大于某块的字节长度时,减去为了下一个块的比较*/
+//             m_iv[i].iov_base = (char*)m_iv[i].iov_base + m_iv[i].iov_len;
+//             m_iv[i].iov_len = 0;
+//         } else {
+//             m_iv[i].iov_base = (char*)m_iv[i].iov_base + written_bytes;
+//             m_iv[i].iov_len -= written_bytes;
+//             written_bytes = 0;
+//             break;
+//         }
+//     }
+// }
+// }
+// // 当循环结束时，total_len等于iov_len_sum表示所有数据都已成功写入
 /* 写HTTP响应 */
 bool UserEvent::write()       /*此函数在main函数里面调用, main函数会根据返回值决定是否关闭连接*/
 {
-    int temp = 0;
-    int bytes_have_send = 0;
     int bytes_to_send = m_write_idx;
-    printf("\n\nbytes_to_send:%d\n",bytes_to_send);
+    //  int bytes_have_send = 0;//加入Userevent
     if (bytes_to_send == 0)
     {
+        printf("  if (bytes_to_send == 0),***return true\n");
         modfd(m_epollfd, m_sockfd, EPOLLIN,this);
         init();
         return true;
     }
-
-    while(true)
-    {
-        temp = writev(m_sockfd, m_iv, m_iv_count);
-        if (temp <= -1)
-        {
-            /* 如果TCP写缓冲区没有空间，则等待下一轮EPOLLOUT事件。虽然在此期间，
-             * 服务器无法立即接收到同一客户的下一个请求，但这可以保证连接的完整性 */
-            if (errno == EAGAIN)
+    while (bytes_have_send < m_write_idx) 
+    { // iov_len_sum是所有iov缓冲区的总长度
+        ssize_t  written_bytes  =  writev(m_sockfd, m_iv, m_iv_count);
+        if (written_bytes == -1) {
+            if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) 
             {
+                // 没有足够的缓冲区空间或资源暂时不可用，可以稍后再试
+                // 此处可以结合select/poll/epoll等I/O多路复用技术等待套接字变为可写
                 modfd(m_epollfd, m_sockfd, EPOLLOUT,this);
+                printf(" errno == EAGAIN,***return true\n");
                 return true;
-            }
-
-            unmap();
-            return false;
+                // continue;
+            }else if (errno == EPIPE || errno == ECONNRESET) 
+            {
+            // 发生了Broken pipe（连接已关闭）或连接重置错误
+            // 这种情况下通常停止写入，处理错误或关闭连接
+                printf("errno == EPIPE  the client has close connection,can't write\n");
+                unmap();
+                return false;
+            }else 
+            {
+                // 其他错误，打印错误日志并处理
+                perror("writev failed");
+                break; 
+            }   
         }
-
-        bytes_to_send -= temp;
-        bytes_have_send += temp;
-        if (bytes_to_send <= bytes_have_send)
+        else if (written_bytes == 0) 
         {
-            /* 发送HTTP响应成功，根据HTTP请求中的Connection字段决定是否理解关闭连接 */
+        // 写入0字节，通常表示连接已经关闭
+                printf("written_bytes == 0  the client has close connection,can't write\n");
+                break;
+        }
+        bytes_have_send += written_bytes;
+        // 移动iov数组中已写入部分，准备下一轮写入,牛逼！！！！！！！！！(破音),可惜不是我写出来的
+        for (size_t i = 0; i < m_iv_count; ++i) {
+            if (m_iv[i].iov_len <= written_bytes) 
+            {
+                written_bytes -= m_iv[i].iov_len;   /*当写入字节大于某块的字节长度时,减去是为了下一个块的比较*/
+                m_iv[i].iov_base = (char*)m_iv[i].iov_base + m_iv[i].iov_len;
+                m_iv[i].iov_len = 0;
+            } else {
+                m_iv[i].iov_base = (char*)m_iv[i].iov_base + written_bytes;
+                m_iv[i].iov_len -= written_bytes;
+                written_bytes = 0;
+                break;
+            }
+        }                
+    }
+        /* 发送HTTP响应成功，根据HTTP请求中的Connection字段决定是否理解关闭连接 */
             unmap();
             if (m_linger)
             {
+               
                 init();
                 modfd(m_epollfd, m_sockfd, EPOLLIN,this);
+                  printf("******************m_linger ***************\n");
                 return true;
             }
             else
             {
                 modfd(m_epollfd, m_sockfd, EPOLLIN,this);    /*main函数会根据返回值决定是否关闭连接*/
                 // return false;
+                init();
+                printf("******************m_linger ***************\n");
                 return true;/*此处暂时不断开，因为没解析完整的http请求,暂时不断掉连接*/
             }
-        }
-    }
+
 }
+
+
+
+
+
+//// ----------未作修改的write,只设置了非阻塞,这样gif图不会卡,但偏离了本意
+/* 写HTTP响应 */
+// bool UserEvent::write()       /*此函数在main函数里面调用, main函数会根据返回值决定是否关闭连接*/
+// {
+//     int temp = 0;
+//     int bytes_have_send = 0;
+//     int bytes_to_send = m_write_idx;
+//     printf("\n\nbytes_to_send:%d\n",bytes_to_send);
+//     if (bytes_to_send == 0)
+//     {
+//         modfd(m_epollfd, m_sockfd, EPOLLIN,this);
+//         init();
+//         return true;
+//     }
+//         int old_option = fcntl( fd, F_GETFL );
+//     int new_option = old_option & ~O_NONBLOCK;
+//     fcntl( fd, F_SETFL, new_option );
+//     while(true)
+//     {
+//         temp = writev(m_sockfd, m_iv, m_iv_count);
+//         if (temp <= -1)
+//         {
+//             /* 如果TCP写缓冲区没有空间，则等待下一轮EPOLLOUT事件。虽然在此期间，
+//              * 服务器无法立即接收到同一客户的下一个请求，但这可以保证连接的完整性 */
+//             if (errno == EAGAIN)
+//             {
+//                 modfd(m_epollfd, m_sockfd, EPOLLOUT,this);
+//                 return true;
+//             }
+
+//             unmap();
+//             return false;
+//         }
+
+//         bytes_to_send -= temp;
+//         bytes_have_send += temp;
+//         if (bytes_to_send <= bytes_have_send)
+//         {
+//             /* 发送HTTP响应成功，根据HTTP请求中的Connection字段决定是否理解关闭连接 */
+//             unmap();
+//             if (m_linger)
+//             {
+//                 init();
+//                 modfd(m_epollfd, m_sockfd, EPOLLIN,this);
+//                 return true;
+//             }
+//             else
+//             {
+//                 modfd(m_epollfd, m_sockfd, EPOLLIN,this);    /*main函数会根据返回值决定是否关闭连接*/
+//                 // return false;
+//                 return true;/*此处暂时不断开，因为没解析完整的http请求,暂时不断掉连接*/
+//             }
+//         }
+//     }
+// }
 
 /* 由线程池中的工作线程调用，这是处理HTTP请求的入口函数 */
 void UserEvent::process()
 {
     HTTP_CODE read_ret = process_read();
-    printf("read_ret = process_read()%s\n",read_ret==FILE_REQUEST ? "FILE_REQUEST":"-1");
+    // printf("read_ret = process_read()%s\n",read_ret==FILE_REQUEST ? "NO_RESOURCE":"-1");
     if (read_ret == NO_REQUEST)
     {
         modfd(m_epollfd, m_sockfd, EPOLLIN,this);
@@ -205,8 +444,12 @@ void UserEvent::process()
     {
         close_conn();
     }
-
-     modfd(m_epollfd, m_sockfd, EPOLLOUT,this);
+    if(read_ret==DIR_REQUEST)
+    {
+        /*在process_write里面已经处理了，此处暂不操作*/
+    }
+    else
+    {modfd(m_epollfd, m_sockfd, EPOLLOUT,this);}
     printf(" modfd(m_epollfd, m_sockfd, EPOLLOUT,this) haa Executed\n");
 }
 
@@ -220,17 +463,17 @@ UserEvent::HTTP_CODE UserEvent::process_read()
     while (((m_checked_state == CHECK_STATE_CONTENT) && (line_status == LINE_OK))
         || ((line_status = parse_line()) == LINE_OK))
     {
-        printf("line_status = parse_line())%s\n",line_status == LINE_OK ? "LINE_OK":"LINE_Bad");
+        // printf_DB("line_status = parse_line())%s\n",line_status == LINE_OK ? "LINE_OK":"LINE_Bad");
         text = get_line();
         m_start_line = m_checked_idx;       /*记录下一行的真实位置*/
-        printf("got 1 http line: %s\n", text);
+        printf("%s\n", text);
 
         switch (m_checked_state)
         {
             case CHECK_STATE_REQUESTLINE:            /*第一个状态，分析请求*/
             {
                 ret = parse_request_line(text);
-                printf(" ret = parse_request_line(text)=%s\n",ret==NO_REQUEST ? "NO_REQUEST":"BAD_REQUEST");
+                // printf_DB(" ret = parse_request_line(text)=%s\n",ret==NO_REQUEST ? "NO_REQUEST":"BAD_REQUEST");
                 if (ret == BAD_REQUEST)
                 {
                     return BAD_REQUEST;
@@ -241,9 +484,9 @@ UserEvent::HTTP_CODE UserEvent::process_read()
             }
             case CHECK_STATE_HEADER:             /*第二个状态，分析头部字段*/
             {
-
+                // return do_request();/*放在这是为了只解析Get行，之后为了分析完整的http请求，这个要去掉*/
                 ret = parse_headers(text);
-                printf(" ret = parse_headers%s\n",ret==GET_REQUEST ? "GET_REQUEST":"BAD_REQUEST");
+                // printf(" ret = parse_headers%s\n",ret==GET_REQUEST ? "GET_REQUEST":"BAD_REQUEST");
                 if (ret == BAD_REQUEST)
                 {
                     return BAD_REQUEST;
@@ -321,22 +564,20 @@ bool UserEvent::process_write(HTTP_CODE ret)
         }
         case FILE_REQUEST:
         {
-            printf("\n\n process_write Switch FILE_REQUEST\n");
             add_status_line(200, ok_200_title);
             if (m_file_stat.st_size != 0)
             {
-                printf("\n process_write Switch FILE_REQUEST in if\n\n");
-                add_headers(m_file_stat.st_size);
+                add_headers(m_file_stat.st_size,get_mime_type(m_url+1));
                 m_iv[0].iov_base = m_write_buf;
                 m_iv[0].iov_len = m_write_idx;
                 m_iv[1].iov_base = m_file_address;
                 m_iv[1].iov_len = m_file_stat.st_size;
                 m_iv_count = 2;
+                m_write_idx=m_write_idx+ m_file_stat.st_size;//le
                 return true;
             }
             else
             {
-                printf("\n\n process_write Switch FILE_REQUEST in else\n\n");
                 const char *ok_string = "<html><body></body></html>";
                 add_headers(strlen(ok_string));
                 if (!add_content(ok_string))
@@ -344,6 +585,39 @@ bool UserEvent::process_write(HTTP_CODE ret)
                     return false;
                 }
             }
+            break;
+        }
+        case DIR_REQUEST:
+        {
+            send_header(this->fd, 200,"OK",get_mime_type("*.html"),0);
+            //发送header.html
+            send_file(this->m_epollfd,this->fd,"dir_header.html",0);
+
+            struct dirent **mylist=NULL;
+            char buf[1024]="";
+            int len =0;
+            int n = scandir(m_real_file,&mylist,NULL,alphasort);
+            for(int i=0;i<n;i++)
+            {
+                //printf("%s\n", mylist[i]->d_name);
+                if(mylist[i]->d_type == DT_DIR)//如果是目录
+                {
+                    len = sprintf(buf,"<li><a href=%s/ >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
+                }
+                else
+                {
+                    len = sprintf(buf,"<li><a href=%s >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
+                }
+
+                
+
+                send(this->fd,buf,len ,0);
+
+                free(mylist[i]);
+            }
+            free(mylist);
+            send_file(this->m_epollfd,this->fd,"dir_tail.html");
+            return true;
             break;
         }
         default:
@@ -429,9 +703,7 @@ UserEvent::HTTP_CODE UserEvent::parse_request_line(char *text)
 /* 解析HTTP请求的一个头部信息 */
 UserEvent::HTTP_CODE UserEvent::parse_headers(char *text)
 {
-     return GET_REQUEST;
     /* 遇到空行，表示头部字段解析完毕 */
-    printf("text[0]:%c\n",text[0]);
     if (text[0] == '\0')
     {
         /* 如果HTTP请求有消息体，则还需要读取m_content_length字节的消息体，状态机转移到CHECK_STATE_CONTENT状态 */
@@ -469,9 +741,57 @@ UserEvent::HTTP_CODE UserEvent::parse_headers(char *text)
         text += strspn(text, " \t");
         m_host = text;
     }
+     /* 处理User-Agent头部字段 */
+    else if(strncasecmp(text, "User-Agent:", 11))
+    {
+        text += 11;
+        text += strspn(text,  " \t");
+        m_user_agent==text;
+
+    }
+     /* 处理Accept:头部字段 */
+    else if(strncasecmp(text, "Accept:",7))
+    {
+        text += 7;
+        text += strspn(text,  " \t");
+        m_accept==text;
+    }
+    /* 处理Referer:头部字段 */
+    else if(strncasecmp(text, "Referer:",8))
+    {
+        text += 8;
+        text += strspn(text,  " \t");
+        m_referer==text;
+    }
+    /* 处理Accept-Encoding:头部字段 */
+    else if(strncasecmp(text, "Accept-Encoding:",16))
+    {
+        text += 16;
+        text += strspn(text,  " \t");
+        m_accept_encodeing==text;
+    }
+    /* 处理Accept-Language:头部字段 */
+    else if(strncasecmp(text, "Accept-Language:",16))
+    {
+        text += 16;
+        text += strspn(text,  " \t");
+        m_accept_language==text;
+    }
+     /* 处理Upgrade-Insecure-Requests::头部字段 */
+    else if(strncasecmp(text, "Upgrade-Insecure-Requests:",26))
+    {
+        text += 26;
+        text += strspn(text,  " \t");
+        if (strcasecmp(text, "1") == 0)
+        {
+            m_update_Insecure = true;
+        }
+    }
     else
     {
+        printf("********************** \n");
         printf("oop! unkown header %s\n", text);
+        printf("********************** \n");
     }
 
     return NO_REQUEST;
@@ -496,7 +816,14 @@ UserEvent::HTTP_CODE UserEvent::do_request()
 {
     strcpy(m_real_file, doc_root);
     int len = strlen(doc_root);
+    char *strfile = m_url+1;
+    if (strfile[0] == '%' && isxdigit(strfile[1]) && isxdigit(strfile[2]))
+    {
+        printf("strfile[0] ==************\n");
+        strdecode(strfile,strfile);/*%E8%8B%A6%E7%93%9C格式乱码转换*/
+    }
     strncpy(m_real_file + len, m_url, FILENAME_LEN - len - 1);
+    printf("*****The m_real_file is %s\n",m_real_file);
     if (stat(m_real_file, &m_file_stat) < 0)
     {
         return NO_RESOURCE;
@@ -509,41 +836,10 @@ UserEvent::HTTP_CODE UserEvent::do_request()
 
     if (S_ISDIR(m_file_stat.st_mode))
     {
-        				send_header(this->fd, 200,"OK",get_mime_type("*.html"),0);
-						//发送header.html
-						send_file(this->m_epollfd,this->fd,"dir_header.html",0);
-
-						struct dirent **mylist=NULL;
-						char buf[1024]="";
-						int len =0;
-						int n = scandir(m_real_file,&mylist,NULL,alphasort);
-						for(int i=0;i<n;i++)
-						{
-							//printf("%s\n", mylist[i]->d_name);
-							if(mylist[i]->d_type == DT_DIR)//如果是目录
-							{
-								len = sprintf(buf,"<li><a href=%s/ >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
-							}
-							else
-							{
-								len = sprintf(buf,"<li><a href=%s >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
-							}
-
-							
-
-							send(this->fd,buf,len ,0);
-
-							free(mylist[i]);
-						}
-						free(mylist);
-
-
-			send_file(this->m_epollfd,this->fd,"dir_tail.html");
-
-        return BAD_REQUEST;
+        return DIR_REQUEST;
     }
-    printf("*****The m_real_file is %s\n",m_real_file);
     int fd = open(m_real_file, O_RDONLY);
+     printf("*****m_file_stat.st_size %ld\n",m_file_stat.st_size);
     m_file_address = (char *)mmap(0, m_file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
     return FILE_REQUEST;
@@ -566,14 +862,12 @@ UserEvent::LINE_STATUS UserEvent::parse_line()
                                                 没有读取到一个完整的行，返回LINE_OPEN以表示还需要继续去客户数据才能进一步分析*/
             if ((m_checked_idx + 1) == m_read_idx)
             {
-                printf("in parse_line func LINE_OPEN\n");
                 return LINE_OPEN;
             }
             else if (m_read_buf[m_checked_idx + 1] == '\n')     /*如果下一个字符时"\n"，则说明我们成功读取一个完整的行*/
             {
                 m_read_buf[m_checked_idx++] = '\0';
                 m_read_buf[m_checked_idx++] = '\0';
-                printf("in parse_line func LINE_OK\n");
                 return LINE_OK;
             }
             return LINE_BAD;                     /*否则的话，说明客户发送的HTTP请求存在语法问题*/
@@ -584,15 +878,12 @@ UserEvent::LINE_STATUS UserEvent::parse_line()
             {
                 m_read_buf[ m_checked_idx-1 ] =  '\0';
                 m_read_buf[ m_checked_idx++ ] =  '\0';
-                printf("in parse_line func LINE_OK\n");
                 return LINE_OK;
             }
-            printf("in parse_line func LINE_BAD\n");
              return LINE_BAD;
         }
     }
      /*如果所有内容都分析完毕也没有遇到"\r"字符，则返回LINE_OPEN，表示还需要继续读取客户数据才能进一步分析*/
-      printf("in parse_line func LINE_OPEN\n");
     return LINE_OPEN;
 }
 
@@ -630,11 +921,19 @@ bool UserEvent::add_status_line(int status, const char *title)
     return add_response("%s %d %s\r\n", "HTTP/1.1", status, title);
 }
 
-bool UserEvent::add_headers(int content_len)
+bool UserEvent::add_headers(int content_len,const char *filetype)
 {
+    if(filetype)
+        add_content_type(filetype);
     add_content_length(content_len);
     add_linger();
     add_blank_line();
+}
+
+bool UserEvent::add_content_type(const char *filetype)
+{
+    return add_response("Content-Type: %s\r\n", filetype);
+
 }
 
 bool UserEvent::add_content_length(int content_len)
@@ -645,6 +944,7 @@ bool UserEvent::add_content_length(int content_len)
 bool UserEvent::add_linger()
 {
     return add_response("Connection: %s\r\n", (m_linger == true) ? "keep-alive" : "close");
+    // return add_response("Connection: %s\r\n", (m_linger == true) ? "keep-alive" : "keep-alive");//le
 }
 
 bool UserEvent::add_blank_line()

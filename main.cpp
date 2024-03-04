@@ -5,7 +5,7 @@
 #define MAX_EVENT_NUMBER 1024
 #define TCP_BUFFER_SIZE 1024
 #define MAX_BUF_SIZE 1024
-#define MAX_USER_CLIENT 2
+#define MAX_USER_CLIENT 100
 
 const char* IP=NULL;
 int epollfd;
@@ -51,9 +51,13 @@ void timeout_handle(UserEvent *cli)
 {
     if(cli == nullptr)
     { return ;}
-    cout << "Connection time out " << " ip:[" << cli->ip << ":" << cli->port << "]" << endl;
-    char reply[]="Sorry,Your Connection TimeOut,You Will Be Kick Out,!_!\nSee Ya Soon!!!!\n";
-    Write(cli->fd,reply,sizeof(reply));
+
+    // send_header(cli->fd, 200,"OK",get_mime_type("*.html"),0);
+    send_file(cli->m_epollfd,cli->fd,"timeout.html",0);
+
+    // cout << "Connection time out " << " ip:[" << cli->ip << ":" << cli->port << "]" << endl;
+    // char reply[]="Sorry,Your Connection TimeOut,You Will Be Kick Out,!_!\nSee Ya Soon!!!!\n";
+    // Write(cli->fd,reply,sizeof(reply));
     epoll_ctl(epollfd, EPOLL_CTL_DEL, cli->fd, NULL);
     close(cli->fd);
     UserEvent::m_user_count--;
@@ -98,8 +102,7 @@ void readData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
     {
         close(Uev->fd);
         htc->delTimer((Timer<UserEvent> *)Uev->timer);
-        epoll_ctl(epollfd, EPOLL_CTL_DEL, Uev->fd, &Uev->event);
-        cout << "Remote Connection has been closed, fd:" << Uev->fd << " ip:[" << Uev->ip << ":" << Uev->port << "]" << endl;
+
         Uev->m_user_count--;
         delete Uev;
     }
@@ -120,17 +123,24 @@ void writeData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
     //     sprintf(buf,"No Get Request,Only Reply Same Message\nThe Server Reply:%s",Uev->method);
     //     Write(Uev->fd, buf, sizeof(buf));
     // }
+
+
         /* 根据写的结果，决定是否关闭连接 */
     if (!Uev->write())
     {
         cout << "\nUev->write Fasle\n"<< endl;
-        Uev->close_conn();
+        Uev->close_conn();            //当关闭连接时,应该删除定时器,与时间关联起来
+        htc->delTimer((Timer<UserEvent> *)Uev->timer);
+        delete Uev;
     }
-    Uev->event.events = EPOLLIN;
-    epoll_ctl(epollfd, EPOLL_CTL_MOD, Uev->fd, &Uev->event);
-    cout << "\nresetTimer\n"<< endl;
-    // 重新设置定时器
-    htc->resetTimer((Timer<UserEvent> *)Uev->timer, 15000);
+    // send_file(Uev->m_epollfd,Uev->fd,Uev->real_file,0);
+    // Uev->event.events = EPOLLIN;
+    // epoll_ctl(epollfd, EPOLL_CTL_MOD, Uev->fd, &Uev->event);
+    else
+    {    cout << "resetTimer\n"<< endl;
+    // // 重新设置定时器
+        htc->resetTimer((Timer<UserEvent> *)Uev->timer, 15000);
+    }
 }
 
 
@@ -149,7 +159,7 @@ void acceptConn(UserEvent *ev, ITimerContainer<UserEvent> *htc)
     // setnonblocking(newcfd);          //设置非阻塞
     cli->init(newcfd,sa,readData,writeData);
 
-    auto timer = htc->addTimer(150000);      //设置客户端超时值150秒
+    auto timer = htc->addTimer(3000000);      //设置客户端超时值3000秒
     timer->setUserData(cli);
     timer->setCallBack(timeout_handle);
     cli->timer = (void *)timer;
@@ -171,15 +181,15 @@ int main()
     printf_DB("The main pid is %d\n",getpid());
     // signal(SIGPIPE,SIG_IGN); /*在Linux等类Unix系统中，默认情况下，当一个进程尝试向已经关闭了读端的TCP套接字写数据时，
     // 内核会向该进程发送一个SIGPIPE信号。如果进程没有捕获并处理这个信号，而是默认行为（终止进程），则服务端进程会被立即结束。*/
-
+    get_local_ip_addresses();
 	char pwd_path[256]="";
     Change_Dir(pwd_path);//切换需要的工作Resource目录
     printf_DB("pwd_path:%s\n",pwd_path);
 
     
     /* 设置(注册)一些信号的处理函数 */
-    if(add_sig(SIGINT) < 0)
-        err_exit("add sig error");
+    // if(add_sig(SIGINT) < 0)
+    //     err_exit("add sig error");
     if(add_sig(SIGTERM) < 0)
         err_exit("add sig error"); 
     if(add_sig(SIGPIPE) < 0)
@@ -249,7 +259,7 @@ int main()
         // printf("min_expire:%ld\n",min_expire);
         // cout<<"min_expire - getMSec()"<<min_expire - getMSec()<<endl;
         int epolltimeout = (min_expire == -1) ? timeout : min_expire - getMSec();
-        // printf("timeout:%d\n",timeout);
+        // printf("epolltimeout:%d\n",epolltimeout);
         int epoll_number = epoll_wait(epollfd,events,MAX_EVENT_NUMBER,epolltimeout);
         if(epoll_number < 0) /*其实这个应该不判断，或者判断完不退出，否则无法统一SINGINT或SIGTERM,
                             因为程序大部分时间都消耗在epoll_wait上,此函数会返回-1，虽然调用了sig_handler函数写进pipefd里面，但来不及判断pipefd就退出了*/

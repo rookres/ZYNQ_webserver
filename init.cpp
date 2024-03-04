@@ -30,6 +30,31 @@ again:
 	return n;
 }
 
+
+void get_local_ip_addresses() {
+    struct ifaddrs *ifap, *ifa;
+
+    if (getifaddrs(&ifap) == -1) {
+        perror("getifaddrs");
+        return;
+    }
+
+    for (ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
+            struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
+            char ip[INET_ADDRSTRLEN];
+
+            if (inet_ntop(AF_INET, &sa->sin_addr, ip, sizeof(ip))) {
+                printf("\n%s IP Address: %s\n", ifa->ifa_name, ip);
+            }
+        } else if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET6) {
+            // 类似处理IPv6地址
+        }
+    }
+
+    freeifaddrs(ifap);
+}
+
 int Accept(int fd,sockaddr_in &sa)
 {
 	int n;
