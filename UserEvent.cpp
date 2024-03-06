@@ -119,7 +119,7 @@ bool UserEvent::read()          /*此函数在main函数里面调用*/
     while(true)
     {
         bytes_read = recv(m_sockfd, m_read_buf + m_read_idx, READ_BUFFER_SIZE - m_read_idx, 0);
-        printf("bytes_read: %d\n",bytes_read);
+        // printf("bytes_read: %d\n",bytes_read);
         if (bytes_read == -1)
         {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -347,24 +347,24 @@ bool UserEvent::write()       /*此函数在main函数里面调用, main函数�
             }
         }                
     }
-        /* 发送HTTP响应成功，根据HTTP请求中的Connection字段决定是否理解关闭连接 */
-            unmap();
-            if (m_linger)
-            {
-               
-                init();
-                modfd(m_epollfd, m_sockfd, EPOLLIN,this);
-                  printf("******************m_linger ***************\n");
-                return true;
-            }
-            else
-            {
-                modfd(m_epollfd, m_sockfd, EPOLLIN,this);    /*main函数会根据返回值决定是否关闭连接*/
-                // return false;
-                init();
-                printf("******************m_linger ***************\n");
-                return true;/*此处暂时不断开，因为没解析完整的http请求,暂时不断掉连接*/
-            }
+    /* 发送HTTP响应成功，根据HTTP请求中的Connection字段决定是否理解关闭连接 */
+        unmap();
+        if (m_linger)
+        {
+            
+            init();
+            modfd(m_epollfd, m_sockfd, EPOLLIN,this);
+                printf("******************m_linger true***************\n");
+            return true;
+        }
+        else
+        {
+            modfd(m_epollfd, m_sockfd, EPOLLIN,this);    /*main函数会根据返回值决定是否关闭连接*/
+            // return false;
+            init();
+            printf("******************m_linger  false***************\n");
+            return true;/*此处暂时不断开，因为没解析完整的http请求,暂时不断掉连接*/
+        }
 
 }
 
@@ -450,7 +450,7 @@ void UserEvent::process()
     }
     else
     {modfd(m_epollfd, m_sockfd, EPOLLOUT,this);}
-    printf(" modfd(m_epollfd, m_sockfd, EPOLLOUT,this) haa Executed\n");
+    // printf(" modfd(m_epollfd, m_sockfd, EPOLLOUT,this) haa Executed\n");
 }
 
 /* 主状态机,(看书第八章,也可观看my word文档的有限状态机分析http协议实例) */
@@ -466,7 +466,7 @@ UserEvent::HTTP_CODE UserEvent::process_read()
         // printf_DB("line_status = parse_line())%s\n",line_status == LINE_OK ? "LINE_OK":"LINE_Bad");
         text = get_line();
         m_start_line = m_checked_idx;       /*记录下一行的真实位置*/
-        printf("%s\n", text);
+        // printf("%s\n", text);
 
         switch (m_checked_state)
         {

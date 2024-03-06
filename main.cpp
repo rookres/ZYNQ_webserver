@@ -1,5 +1,5 @@
 #include "init.hpp"
-#include "threadpool.h"
+#include "threadpool_adjust.hpp"
 #define PORT 8888
 #define BUFFER_SIZE 1024
 #define MAX_EVENT_NUMBER 1024
@@ -10,11 +10,11 @@
 const char* IP=NULL;
 int epollfd;
 int pipefd[2];
-
+// threadpool <UserEvent> *pool=NULL;
 extern void addfd(UserEvent *Uev, bool one_shot);
 
     /* 创建线程池 */
-threadpool <UserEvent> *pool = new threadpool<UserEvent>;
+threadpool <UserEvent> *pool = new threadpool<UserEvent>;//放在这不会产生段错误,放在main函数里面就会产生，暂时不知道为什么。2024年3月6日11点08分
     // if(!pool){err_exit("new");}
 
 void sig_handler(int signum)
@@ -159,7 +159,7 @@ void acceptConn(UserEvent *ev, ITimerContainer<UserEvent> *htc)
     // setnonblocking(newcfd);          //设置非阻塞
     cli->init(newcfd,sa,readData,writeData);
 
-    auto timer = htc->addTimer(3000000);      //设置客户端超时值3000秒
+    auto timer = htc->addTimer(300000);      //设置客户端超时值300秒
     timer->setUserData(cli);
     timer->setCallBack(timeout_handle);
     cli->timer = (void *)timer;
@@ -186,7 +186,8 @@ int main()
     Change_Dir(pwd_path);//切换需要的工作Resource目录
     printf_DB("pwd_path:%s\n",pwd_path);
 
-    
+    //     /* 创建线程池 */
+    // threadpool <UserEvent> *pool = new threadpool<UserEvent>;
     /* 设置(注册)一些信号的处理函数 */
     // if(add_sig(SIGINT) < 0)
     //     err_exit("add sig error");

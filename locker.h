@@ -59,6 +59,10 @@ public:
     bool unlock() {
         return pthread_mutex_unlock(&m_mutex) == 0;
     }
+        // 获取互斥锁变量
+    pthread_mutex_t get_locker() {
+        return m_mutex;
+    }
 
 private:
     pthread_mutex_t m_mutex;
@@ -98,6 +102,10 @@ public:
     // 唤醒等待条件变量的线程
     bool signal() {
         return pthread_cond_signal(&m_cond) == 0;
+    }
+        // 唤醒等待条件变量的线程
+    bool broadcast() {
+        return pthread_cond_broadcast(&m_cond) == 0;
     }
 
 private:

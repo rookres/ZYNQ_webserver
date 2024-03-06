@@ -18,7 +18,7 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <sys/uio.h>
-#include "locker.h"     /*第十四章介绍的线程同步机制的包装类*/
+// #include "locker.h"     /*第十四章介绍的线程同步机制的包装类*/
 
 
 
