@@ -295,6 +295,7 @@ int main()
                                 case SIGTERM:
                                 {
                                     printf_DB("\nRecive SIGTERM\n");
+                                    break;
                                 }
                                 case SIGPIPE:
                                 {                            

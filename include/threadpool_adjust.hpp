@@ -40,8 +40,8 @@ private:
     void *adjust_thread();
     bool is_thread_alive(pthread_t tid);
 private:
-    int m_max_requests;     /* 请求队列中允许的最大请求数 */
-    pthread_t *m_threads;   /* 描述线程池的数组，其大小为m_thread_number */
+    
+    
     std::list<T *> m_workqueue;     /* 请求队列 */
     locker m_queuelocker;   /* 保护请求队列的互斥锁 */
     locker m_LockerForLiveThr;   /* 保护请求队列的互斥锁 */
@@ -50,7 +50,7 @@ private:
     sem m_queuestat;    /* 是否有任务需要处理 */
     cond m_queueNotFull_cond;
     cond m_queueNotEmpty_cond;
-    bool shutdown;        /* 是否结束线程 *//* 标志位，线程池使用状态，true或false */
+   
 
     pthread_mutex_t lock;               /* 用于锁住本结构体 */    
     pthread_mutex_t lock_busy_counter;     /* 记录忙状态线程个数de琐 -- busy_thr_num */
@@ -62,11 +62,14 @@ private:
     pthread_t adjust_tid;               /* 存管理线程tid */
     // threadpool_task_t *task_queue;      /* 任务队列(数组首地址) */
 
+    int live_thr_num;                   /* 当前存活线程个数 */
     int min_thr_num;                    /* 线程池最小线程数 */
     int max_thr_num;                    /* 线程池最大线程数 */
-    int live_thr_num;                   /* 当前存活线程个数 */
+    size_t m_max_requests;              /* 请求队列中允许的最大请求数 */
     int busy_thr_num;                   /* 忙状态线程个数 */
     int wait_exit_thr_num;              /* 要销毁的线程个数 */
+    bool shutdown;        /* 是否结束线程 *//* 标志位，线程池使用状态，true或false */
+    pthread_t *m_threads;   /* 描述线程池的数组，其大小为m_thread_number */
 
     // int queue_front;                    /* task_queue队头下标 */
     // int queue_rear;                     /* task_queue队尾下标 */

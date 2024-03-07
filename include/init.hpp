@@ -19,9 +19,9 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <sys/epoll.h>
-#define DEBUG_ON
+// #define USE_DEBUG //在makefile已经指定了USE_DEBUG宏
 
-#ifdef DEBUG_ON
+#ifdef USE_DEBUG
 #define printf_DB(fmt, ...) printf(fmt, ##__VA_ARGS__)  // 定义一个宏PRINT，用于打印
 #else
 #define printf_DB(fmt, ...)  // 如果宏开关未定义，则将PRINT定义为空
@@ -78,7 +78,7 @@ int udp4init(short port,const char *IP);
 void udp_write();
 void UDP_Handle(int udpfd);
 
-char * Change_Dir(char*pwd_path);
+void Change_Dir(char*pwd_path);
 
 
 
@@ -90,8 +90,8 @@ void epoll_rmfd(int &epollfd,int fd);
 
 
 /*Handle Client Something*/
-void read_client_request(int epfd ,UserEvent *Uev);
+void read_client_request(UserEvent *Uev);
 void send_header(int cfd, int code,const char *info,const char *filetype,int length);
 void send_file(int epfd,int cfd,const char *path,bool flag=false);
-void Get_Handle(int epfd,UserEvent *Uev) ;
+// void Get_Handle(int epfd,UserEvent *Uev) ;
 #endif

@@ -291,13 +291,17 @@ int udp4init(short port,const char *IP)
 }
 
 
-char * Change_Dir(char*pwd_path)
+void Change_Dir(char*pwd_path)
 {
 	char * path = getenv("PWD");//获取当前目录的工作路径
 	strcpy(pwd_path,path);
 	strcat(pwd_path,"/Resource");
-	chdir(pwd_path);
-	return pwd_path;
+	if (chdir(pwd_path) != 0) 
+	{
+		perror("Failed to change directory\n");
+		// 处理错误，例如退出程序或采取其他恢复措施
+		exit(EXIT_FAILURE);
+	}
 }
 
 void  udp_write()
@@ -393,7 +397,7 @@ void send_file(int epfd,int cfd,const char *path,bool flag)
 		}
 }
 
-void read_client_request(int epollfd ,UserEvent *Uev)
+void read_client_request(UserEvent *Uev)
 {
 		//读取请求(先读取第一行)
 	char buf[1024]="";
@@ -413,69 +417,69 @@ void read_client_request(int epollfd ,UserEvent *Uev)
 
 }
 
-void Get_Handle(int epfd,UserEvent *Uev) 
-{
-	//[GET]  [/%E8%8B%A6%E7%93%9C.txt]  [HTTP/1.1]
-	 		char *strfile = Uev->content+1;
-			if (strfile[0] == '%' && isxdigit(strfile[1]) && isxdigit(strfile[2]))
-			{
-				strdecode(strfile,strfile);/*%E8%8B%A6%E7%93%9C格式乱码转换*/
-			}
-	 		 //GET / HTTP/1.1\R\N
-	 		if(*strfile == 0)		//如果没有请求文件,默认请求当前目录
-	 			strfile= "./";
-				// strfile= "./index.html";
-	 		//判断请求的文件是否存在
-	 		struct stat s;
+// void Get_Handle(int epfd,UserEvent *Uev) 
+// {
+// 	//[GET]  [/%E8%8B%A6%E7%93%9C.txt]  [HTTP/1.1]
+// 	 		char *strfile = Uev->content+1;
+// 			if (strfile[0] == '%' && isxdigit(strfile[1]) && isxdigit(strfile[2]))
+// 			{
+// 				strdecode(strfile,strfile);/*%E8%8B%A6%E7%93%9C格式乱码转换*/
+// 			}
+// 	 		 //GET / HTTP/1.1\R\N
+// 	 		if(*strfile == 0)		//如果没有请求文件,默认请求当前目录
+// 	 			strfile= "./";
+// 				// strfile= "./index.html";
+// 	 		//判断请求的文件是否存在
+// 	 		struct stat s;
 			
-	 		if(stat(strfile,&s) < 0)//文件不存在
-	 		{
-	 			printf_DB("file not found\n");
-	 			//先发送 报头(状态行  消息头  空行)
-	 			send_header(Uev->fd, 404,"NOT FOUND",get_mime_type("*.html"),0);
-	 			//发送文件 error.html
-	 			send_file(epfd,Uev->fd,"error.html");
+// 	 		if(stat(strfile,&s) < 0)//文件不存在
+// 	 		{
+// 	 			printf_DB("file not found\n");
+// 	 			//先发送 报头(状态行  消息头  空行)
+// 	 			send_header(Uev->fd, 404,"NOT FOUND",get_mime_type("*.html"),0);
+// 	 			//发送文件 error.html
+// 	 			send_file(epfd,Uev->fd,"error.html");
 
-	 		}
-	 		else
-	 		{	 //请求的是一个普通的文件
-	 			if(S_ISREG(s.st_mode))
-	 			{
-	 				printf_DB("file\n");
-	 				//先发送 报头(状态行  消息头  空行)
-	 				send_header(Uev->fd, 200,"OK",get_mime_type(strfile),s.st_size);
-	 				//发送文件
-	 				send_file(epfd,Uev->fd,strfile);
-	 			}
-	 			else if(S_ISDIR(s.st_mode))//请求的是一个目录
-	 			{
-						printf_DB("dir\n");
-						//发送一个列表  网页
-						send_header(Uev->fd, 200,"OK",get_mime_type("*.html"),0);
-						//发送header.html
-						send_file(epfd,Uev->fd,"dir_header.html");
+// 	 		}
+// 	 		else
+// 	 		{	 //请求的是一个普通的文件
+// 	 			if(S_ISREG(s.st_mode))
+// 	 			{
+// 	 				printf_DB("file\n");
+// 	 				//先发送 报头(状态行  消息头  空行)
+// 	 				send_header(Uev->fd, 200,"OK",get_mime_type(strfile),s.st_size);
+// 	 				//发送文件
+// 	 				send_file(epfd,Uev->fd,strfile);
+// 	 			}
+// 	 			else if(S_ISDIR(s.st_mode))//请求的是一个目录
+// 	 			{
+// 						printf_DB("dir\n");
+// 						//发送一个列表  网页
+// 						send_header(Uev->fd, 200,"OK",get_mime_type("*.html"),0);
+// 						//发送header.html
+// 						send_file(epfd,Uev->fd,"dir_header.html");
 
-						struct dirent **mylist=NULL;
-						char buf[1024]="";
-						int len =0;
-						int n = scandir(strfile,&mylist,NULL,alphasort);
-						for(int i=0;i<n;i++)
-						{
-							//printf("%s\n", mylist[i]->d_name);
-							if(mylist[i]->d_type == DT_DIR)//如果是目录
-							{
-								len = sprintf(buf,"<li><a href=%s/ >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
-							}
-							else
-							{
-								len = sprintf(buf,"<li><a href=%s >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
-							}
+// 						struct dirent **mylist=NULL;
+// 						char buf[1024]="";
+// 						int len =0;
+// 						int n = scandir(strfile,&mylist,NULL,alphasort);
+// 						for(int i=0;i<n;i++)
+// 						{
+// 							//printf("%s\n", mylist[i]->d_name);
+// 							if(mylist[i]->d_type == DT_DIR)//如果是目录
+// 							{
+// 								len = sprintf(buf,"<li><a href=%s/ >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
+// 							}
+// 							else
+// 							{
+// 								len = sprintf(buf,"<li><a href=%s >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
+// 							}
 
-							send(Uev->fd,buf,len ,0);
-							free(mylist[i]);
-						}
-						free(mylist);
-						send_file(epfd,Uev->fd,"dir_tail.html");
-	 			}
-	 		}
-}			
+// 							send(Uev->fd,buf,len ,0);
+// 							free(mylist[i]);
+// 						}
+// 						free(mylist);
+// 						send_file(epfd,Uev->fd,"dir_tail.html");
+// 	 			}
+// 	 		}
+// }			

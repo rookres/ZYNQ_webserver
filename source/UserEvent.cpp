@@ -333,8 +333,8 @@ bool UserEvent::write()       /*此函数在main函数里面调用, main函数�
         }
         bytes_have_send += written_bytes;
         // 移动iov数组中已写入部分，准备下一轮写入,牛逼！！！！！！！！！(破音),可惜不是我写出来的
-        for (size_t i = 0; i < m_iv_count; ++i) {
-            if (m_iv[i].iov_len <= written_bytes) 
+        for (int i = 0; i < m_iv_count; ++i) {
+            if (m_iv[i].iov_len <= (size_t)written_bytes)
             {
                 written_bytes -= m_iv[i].iov_len;   /*当写入字节大于某块的字节长度时,减去是为了下一个块的比较*/
                 m_iv[i].iov_base = (char*)m_iv[i].iov_base + m_iv[i].iov_len;
@@ -746,7 +746,7 @@ UserEvent::HTTP_CODE UserEvent::parse_headers(char *text)
     {
         text += 11;
         text += strspn(text,  " \t");
-        m_user_agent==text;
+        m_user_agent=text;
 
     }
      /* 处理Accept:头部字段 */
@@ -754,28 +754,28 @@ UserEvent::HTTP_CODE UserEvent::parse_headers(char *text)
     {
         text += 7;
         text += strspn(text,  " \t");
-        m_accept==text;
+        m_accept=text;
     }
     /* 处理Referer:头部字段 */
     else if(strncasecmp(text, "Referer:",8))
     {
         text += 8;
         text += strspn(text,  " \t");
-        m_referer==text;
+        m_referer=text;
     }
     /* 处理Accept-Encoding:头部字段 */
     else if(strncasecmp(text, "Accept-Encoding:",16))
     {
         text += 16;
         text += strspn(text,  " \t");
-        m_accept_encodeing==text;
+        m_accept_encodeing=text;
     }
     /* 处理Accept-Language:头部字段 */
     else if(strncasecmp(text, "Accept-Language:",16))
     {
         text += 16;
         text += strspn(text,  " \t");
-        m_accept_language==text;
+        m_accept_language=text;
     }
      /* 处理Upgrade-Insecure-Requests::头部字段 */
     else if(strncasecmp(text, "Upgrade-Insecure-Requests:",26))
@@ -928,6 +928,7 @@ bool UserEvent::add_headers(int content_len,const char *filetype)
     add_content_length(content_len);
     add_linger();
     add_blank_line();
+    return true;
 }
 
 bool UserEvent::add_content_type(const char *filetype)
