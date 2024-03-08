@@ -30,7 +30,16 @@ again:
 	return n;
 }
 
-
+/****************************************************************************/
+/**
+* 获取本地所有的IP地址.
+*
+* @param	None.
+* @return	None.
+*
+* @note		只显示了ipv4的，ipv6的没做处理.
+*
+*****************************************************************************/
 void get_local_ip_addresses() {
     struct ifaddrs *ifap, *ifa;
 
@@ -289,7 +298,6 @@ int udp4init(short port,const char *IP)
 
 	return udpfd;
 }
-
 
 char* Change_Dir(char*pwd_path,const char*resource_path)
 {

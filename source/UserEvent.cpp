@@ -443,14 +443,15 @@ void UserEvent::process()
     if (!write_ret)
     {
         close_conn();
+        read_cb=nullptr;
+        write_cb=nullptr;
     }
     if(read_ret==DIR_REQUEST)
     {
-        /*在process_write里面已经处理了，此处暂不操作*/
+        /*在process_write里面已经处理写过了了，此处暂不操作,如果此处再设置EPOLLOUT,会导致无法监听EPOLLIN*/
     }
     else
     {modfd(m_epollfd, m_sockfd, EPOLLOUT,this);}
-    // printf(" modfd(m_epollfd, m_sockfd, EPOLLOUT,this) haa Executed\n");
 }
 
 /* 主状态机,(看书第八章,也可观看my word文档的有限状态机分析http协议实例) */
@@ -882,11 +883,6 @@ UserEvent::HTTP_CODE UserEvent::do_request()
             strdecode(strtemp,strtemp);/*%E8%8B%A6%E7%93%9C格式乱码转换*/
         }
     }
-    // if (strfile[0] == '%' && isxdigit(strfile[1]) && isxdigit(strfile[2]))
-    // {
-    //     printf("strfile[0] ==************\n");
-    //     strdecode(strfile,strfile);/*%E8%8B%A6%E7%93%9C格式乱码转换*/
-    // }
     strncpy(m_real_file + len, m_url, FILENAME_LEN - len - 1);
     printf("**stat before***The m_real_file is %s\n",m_real_file);
     if (stat(m_real_file, &m_file_stat) < 0)

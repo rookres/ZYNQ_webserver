@@ -1,20 +1,18 @@
 #include "init.hpp"
 #include "threadpool_adjust.hpp"
-#define PORT 8888
+
 #define BUFFER_SIZE 1024
 #define MAX_EVENT_NUMBER 1024
 #define TCP_BUFFER_SIZE 1024
-#define MAX_BUF_SIZE 1024
 #define MAX_USER_CLIENT 100
 
-const char* IP=NULL;    /*使用 webserver 127.1 8888来运行程序*/
 int epollfd;
 int pipefd[2];
-// threadpool <UserEvent> *pool=NULL;
+threadpool <UserEvent> *pool;
 extern void addfd(UserEvent *Uev, bool one_shot);
 
     /* 创建线程池 */
-threadpool <UserEvent> *pool = new threadpool<UserEvent>;//放在这不会产生段错误,放在main函数里面就会产生，暂时不知道为什么。2024年3月6日11点08分
+// threadpool <UserEvent> *pool = new threadpool<UserEvent>;//放在这不会产生段错误,放在main函数里面就会产生，暂时不知道为什么。2024年3月6日11点08分
     // if(!pool){err_exit("new");}
 
 void sig_handler(int signum)
@@ -27,17 +25,19 @@ void sig_handler(int signum)
 
 }
 
-int add_sig(int signum)
+int add_sig(int sig, void ( handler ) (int), bool restart = true)   /*void (handler)(int)和void (*handler)(int)是同一个函数指针类型的声明。*/
 {
     struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = sig_handler;
-    sa.sa_flags |= SA_RESTART;     /*为了确保当信号发生时，被信号打断的系统调用能够从被打断的地方重新开始，而不是直接返回错误并终止系统调用的执行*/
+    memset(&sa, '\0', sizeof(sa));
+    sa.sa_handler = handler;
+    if (restart)
+    {
+        sa.sa_flags |= SA_RESTART;  /*为了确保当信号发生时，被信号打断的系统调用能够从被打断的地方重新开始，而不是直接返回错误并终止系统调用的执行*/
+    }
     sigfillset(&sa.sa_mask);
-
-    return sigaction(signum, &sa, nullptr);
-
+    return sigaction(sig, &sa, nullptr);
 }
+
 
 void show_error(int connfd, const char *info)
 {
@@ -94,16 +94,16 @@ void readData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
     //     Uev->event.events = EPOLLOUT;
     //     epoll_ctl(epollfd, EPOLL_CTL_MOD, Uev->fd, &Uev->event);
     // }
+     /* 根据读的结果，决定是将任务加到线程池，还是关闭连接 */
     if(Uev->read())
     {
          pool->append(Uev);         
     }
     else
     {
-        close(Uev->fd);
+        cout << "\nUev->read()\n"<< endl;
+        Uev->close_conn();            //当关闭连接时,应该删除定时器,与时间关联起来
         htc->delTimer((Timer<UserEvent> *)Uev->timer);
-
-        Uev->m_user_count--;
         delete Uev;
     }
 
@@ -173,34 +173,94 @@ void acceptConn(UserEvent *ev, ITimerContainer<UserEvent> *htc)
     // printf_DB("new client ip=%s port=%u\n",cli->ip,cli->port);
 
 }
+void pipefd_handle(int *pipefd,char*sigbuf,short sigbuf_len,bool &running )
+{
+    memset(sigbuf,'\0',sigbuf_len);
+    int n = read(pipefd[0], sigbuf, sigbuf_len);
+    if(n < 0)
+    {
+        cout << "deal read signal error:" << strerror(errno) << endl;
+        // continue; 
+        return;
+    }
+    else if(n > 0)
+    {
+        for(int i = 0; i < n; i++)
+        {
+            switch (sigbuf[i])
+            {
+                case SIGINT:
+                {                            
+                    running = false;
+                    printf_DB("\nRecive SIGINT,the server STOP!!!\n");
+                    break;
+                }
+                case SIGTERM:
+                {
+                    printf_DB("\nRecive SIGTERM\n");
+                    break;
+                }
+                case SIGHUP:
+                {
+                    printf_DB("\nRecive SIGHUP\n");
+                    break;
+                }
+                case SIGCHLD: /*此处回收的主要是由主进程fork产生的子进程执行excel的*/
+                {
+                    printf_DB("\nRecive SIGCHLD\n");                                    
+                    pid_t pid;
+                    int stat;
+                    while ((pid = waitpid(-1, &stat, WNOHANG)) > 0)/*回收子进程资源*/
+                    {
+                        printf("Handle SIGCHLD signal over\n"); 
+                        continue;
+                    }
+                    break;
+                }
+                case SIGQUIT:
+                {
+                    printf_DB("\nRecive SIGQUIT\n");
+                    break;
+                }
+            }
+        }
+    }
+}
 
-
+// int main(int argc, char *argv[])
+// {
+    // if (argc < 2)
+    // {
+    //     printf("usage: %s ip_address port_number\n", basename(argv[0])); 
+    //     return -1;
+    // }
+    // const char *IP = argv[1];
+    // short PORT = atoi(argv[2]);
+    /*上面的int main我觉得每次调试麻烦,直接写死了,之后还是要解开注释*/
 int main()
 {
+    const char *IP =NULL;
+    short PORT = 8888;
+
     printf_DB("hello,world,the program start 2024年2月21日19点40分\n" );
     printf_DB("The main pid is %d\n",getpid());
-    // signal(SIGPIPE,SIG_IGN); /*在Linux等类Unix系统中，默认情况下，当一个进程尝试向已经关闭了读端的TCP套接字写数据时，
-    // 内核会向该进程发送一个SIGPIPE信号。如果进程没有捕获并处理这个信号，而是默认行为（终止进程），则服务端进程会被立即结束。*/
-    get_local_ip_addresses();
-	// char pwd_path[256]="";
-    // char * pwd_path = getenv("PWD");//获取当前目录的工作路径
-    // Change_Dir(getenv("PWD"),"/Resource");//切换需要的工作Resource目录
-    printf_DB("pwd_path:%s\n",Change_Dir(getenv("PWD"),"/Resource"));
-
-    //     /* 创建线程池 */
-    // threadpool <UserEvent> *pool = new threadpool<UserEvent>;
+    get_local_ip_addresses();                                           /*获取本地的ens33 ip地址,以便用于浏览器快速访问*/
+    printf_DB("pwd_path:%s\n",Change_Dir(getenv("PWD"),"/Resource"));/*获取当前目录的工作路径,并切换需要的工作Resource目录*/
+    pool = new threadpool<UserEvent>; /* 创建线程池 */
     /* 设置(注册)一些信号的处理函数 */
-    // if(add_sig(SIGINT) < 0)
-    //     err_exit("add sig error");
-    if(add_sig(SIGTERM) < 0)
+    if(add_sig(SIGINT,sig_handler) < 0)
+        err_exit("add sig error");
+    if(add_sig(SIGTERM,sig_handler) < 0)
         err_exit("add sig error"); 
-    if(add_sig(SIGPIPE) < 0)
+   /*在Linux等类Unix系统中，默认情况下，当一个进程尝试向已经关闭了读端的TCP套接字写数据时，内核会向该进程发送一个SIGPIPE信号。
+    如果进程没有捕获并处理这个信号，而是默认行为（终止进程），则服务端进程会被立即结束,一般是忽略*/
+    if(add_sig(SIGPIPE,SIG_IGN) < 0)
         err_exit("add sig error");
-    if(add_sig(SIGHUP) < 0)
+    if(add_sig(SIGHUP,sig_handler) < 0)
         err_exit("add sig error");
-    if(add_sig(SIGCHLD) < 0)
+    if(add_sig(SIGCHLD,sig_handler) < 0)
         err_exit("add sig error");
-    if(add_sig(SIGQUIT) < 0)
+    if(add_sig(SIGQUIT,sig_handler) < 0)
         err_exit("add sig error");
     
     if(socketpair(AF_UNIX, SOCK_STREAM, 0, pipefd) < 0)
@@ -241,27 +301,20 @@ int main()
     epoll_ctl(epollfd, EPOLL_CTL_ADD, udpfd, &UDPServer.event);
     epoll_ctl(epollfd, EPOLL_CTL_ADD, pipefd[0], &SigEvent.event);
     cout << "------ Create TimerContainer ------" << endl;
-
     ITimerContainer<UserEvent> *htc = new HeapTimerContainer<UserEvent>;
-
     cout << "------ Create TimerContainer over ------" << endl;
     epoll_event events[MAX_EVENT_NUMBER];//最大监听数目
     int timeout = 10000;      //如果没有连接，则设置超时值默认为10秒
-    char sigbuf[128] = {0};
+    char sigbuf[64] = {0};
     bool running = true;
-    // epoll_addfd(epollfd,sfd);
-    // epoll_addfd(epollfd,udpfd);
 
     while(running)
     { 
         // 将定时容器中定时时间最短的时长作为epoll_wait的最大等待时间
         auto min_expire = htc->getMinExpire();
         /*其实下面这个减，并不是获取之前设定的timeout，而是获得当前定时器还剩多长时间，
-        并设置到epoll里面，epoll超时未检测到，则必有定时器过期，然后执行tick()函数。也就是说将超时时间作为心动间隔*/
-        // printf("min_expire:%ld\n",min_expire);
-        // cout<<"min_expire - getMSec()"<<min_expire - getMSec()<<endl;
+        并设置到epoll里面，epoll超时未检测到，则必有定时器过期，然后执行tick()函数,也就是说将超时时间作为心动间隔*/
         int epolltimeout = (min_expire == -1) ? timeout : min_expire - getMSec();
-        // printf("epolltimeout:%d\n",epolltimeout);
         int epoll_number = epoll_wait(epollfd,events,MAX_EVENT_NUMBER,epolltimeout);
         if(epoll_number < 0) /*其实这个应该不判断，或者判断完不退出，否则无法统一SINGINT或SIGTERM,
                             因为程序大部分时间都消耗在epoll_wait上,此函数会返回-1，虽然调用了sig_handler函数写进pipefd里面，但来不及判断pipefd就退出了*/
@@ -271,106 +324,37 @@ int main()
             for(int i=0;i<epoll_number;i++)
             {
                 UserEvent *Uev =  (UserEvent *) events[i].data.ptr;
-                if(Uev->fd == pipefd[0] && (Uev->event.events & EPOLLIN))/*其实这个最好放最前面来判断，如果放在最后或者中间，
-                                                                        当cfd关闭时,删除用户Event时，会造成内存泄漏*/
+                /*其实这个最好放最前面来判断，如果放在最后或者中间，当cfd关闭时,删除用户Event时，会造成内存泄漏*/
+                if(Uev->fd == pipefd[0] && (Uev->event.events & EPOLLIN))
                 {
-                    memset(sigbuf,'\0',sizeof(sigbuf));
-                    int n = read(pipefd[0], sigbuf, sizeof(sigbuf));
-                    if(n < 0)
-                    {
-                        cout << "deal read signal error:" << strerror(errno) << endl;
-                        continue; 
-                    }
-                    else if(n > 0)
-                    {
-                        for(int i = 0; i < n; i++)
-                        {
-                            switch (sigbuf[i])
-                            {
-                                case SIGINT:
-                                {                            
-                                    running = false;
-                                    printf_DB("\nRecive SIGINT,the server STOP!!!\n");
-                                    break;
-                                }
-                                case SIGTERM:
-                                {
-                                    printf_DB("\nRecive SIGTERM\n");
-                                    break;
-                                }
-                                case SIGPIPE:
-                                {                            
-                                    //running = false;
-                                    printf_DB("\nRecive SIGPIPE\n");
-                                    break;
-                                }
-                                case SIGHUP:
-                                {
-                                    printf_DB("\nRecive SIGHUP\n");
-                                    break;
-                                }
-                                case SIGCHLD: /*此处回收的主要是由主进程fork产生的子进程执行excel的*/
-                                {
-                                    printf_DB("\nRecive SIGCHLD\n");                                    
-                                    pid_t pid;
-                                    int stat;
-                                    while ((pid = waitpid(-1, &stat, WNOHANG)) > 0)/*原来是==。我改成了=。觉得是书写错误、 --by le*/
-                                    {
-                                        printf("Handle SIGCHLD signal over\n"); 
-                                        continue;
-                                    }
-                                    break;
-                                }
-                                case SIGQUIT:
-                                {
-                                    printf_DB("\nRecive SIGQUIT\n");
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    pipefd_handle(pipefd,sigbuf,sizeof(sigbuf),running);
                 }
                 //判断是否sfd,并建立新连接
                 else if(Uev->fd == sfd && Uev->event.events & EPOLLIN)
                 {   
                     acceptConn(Uev, htc);
-
                 }
-                else if(Uev->fd == udpfd &&Uev->event.events & EPOLLIN)/*UDP连接暂时只做回射信息*/
+                /*UDP连接暂时只做回射信息*/
+                else if(Uev->fd == udpfd &&Uev->event.events & EPOLLIN)
                 {   
                     printf_DB("something connect in UDP \n");
                     UDP_Handle(Uev->fd);
-
                 }
-                else if(Uev->event.events & EPOLLIN)//TCP连接,即cfd可读变化,写和读都是主线程在做，http分析和响应由线程池做*/
+                /*TCP连接,即cfd可读变化,写和读都是主线程在做，http分析和响应由线程池做*/
+                else if(Uev->event.events & EPOLLIN)
                 {
                      Uev->read_cb(Uev, htc);
-                    /* 根据读的结果，决定是将任务加到线程池，还是关闭连接 */
-                    // if (Uev->read())
-                    // {
-                    //     pool->append(Uev);          /*这里+????，会不会是 pool->append(users[sockfd])???但是好像+,也不是不行啊,users是数组首地址*/
-                    // }
-                    // else
-                    // {
-                    //     Uev->close_conn();
-                    // }
-
-
                 }
-                else if(Uev->event.events & EPOLLOUT)//TCP连接,即cfd可写变化
+                /*TCP连接,即cfd可写变化*/
+                else if(Uev->event.events & EPOLLOUT)
                 {
-                        Uev->write_cb(Uev, htc);
-                        /* 根据写的结果，决定是否关闭连接 */
-                        // if (!Uev->write())
-                        // {
-                        //     Uev->close_conn();
-                        // }
+                    Uev->write_cb(Uev, htc);
                 }
-
+                /* 如果有异常，直接关闭客户连接 */
                 else if(Uev->event.events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
-                {
-                     /* 如果有异常，直接关闭客户连接 */
+                {  
                         Uev->close_conn();
+                        htc->delTimer((Timer<UserEvent> *)Uev->timer);
                 }
             }
         }

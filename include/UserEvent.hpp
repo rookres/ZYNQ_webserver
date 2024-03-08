@@ -22,7 +22,7 @@
 
 
 
-#define MAX_BUF_SIZE 1024
+#define MAX_BUF_SIZE 512
 
 class UserEvent;//前置声明
 
@@ -46,10 +46,11 @@ public:
     char method[256]="",content[256]="", protocol[256]="";
     readHandle read_cb;
     writeHandle write_cb;
+    char reflect_method[256]={'\0'};//此用于反射服务器
 
  public:
     /* 文件名的最大长度 */
-    static const int FILENAME_LEN = 200;
+    static const int FILENAME_LEN = 512;
     /* 读缓冲区的大小 */
     static const int READ_BUFFER_SIZE = 2048;
     /* 写缓冲区的大小 */
@@ -108,11 +109,12 @@ public:
      static int m_epollfd;
      /* 统计用户数量 */
      static int m_user_count;
-private:
-    /* 读HTTP连接的socket和对方的socket地址 */
+         /* 获得读缓冲区,作反射服务器用 */
+    char* get_m_read_buf(){return m_read_buf;}
+        /* 读HTTP连接的socket和对方的socket地址 */
     int m_sockfd;
     sockaddr_in m_address;
-
+private:
     /* 读缓冲区 */
     char m_read_buf[READ_BUFFER_SIZE];
     /* 标识读缓冲区中已经读入的客户数据的最后一个字节的下一个位置 */
