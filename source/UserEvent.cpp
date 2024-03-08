@@ -13,8 +13,8 @@ const char *error_500_title = "Internal Error";
 const char *error_500_form = "There was an unusual problem serving the requested file.\n";
 
 /* 网站的根目录 */
-const char *doc_root = "/home/tronlong/test/webserver/Resource";
-
+// const char *doc_root = "/home/tronlong/test/webserver/Resource";
+const char *doc_root = Change_Dir(getenv("PWD"));//切换需要的工作Resource目录;
 
 int UserEvent::m_user_count = 0;
 int UserEvent::m_epollfd = -1;
@@ -466,7 +466,7 @@ UserEvent::HTTP_CODE UserEvent::process_read()
         // printf_DB("line_status = parse_line())%s\n",line_status == LINE_OK ? "LINE_OK":"LINE_Bad");
         text = get_line();
         m_start_line = m_checked_idx;       /*记录下一行的真实位置*/
-        // printf("%s\n", text);
+        printf("%s\n", text);
 
         switch (m_checked_state)
         {
@@ -608,17 +608,67 @@ bool UserEvent::process_write(HTTP_CODE ret)
                 {
                     len = sprintf(buf,"<li><a href=%s >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
                 }
-
-                
-
                 send(this->fd,buf,len ,0);
 
                 free(mylist[i]);
             }
             free(mylist);
             send_file(this->m_epollfd,this->fd,"dir_tail.html");
-            return true;
-            break;
+            return false;/*此处设为fasle,而不是true,浏览器就不会转圈了*/
+            // break;
+        }
+        case CGI_REQUEST:
+        {
+            /* 判断客户要运行的cgi程序是否存在 */
+            if (access(m_url+1, F_OK) == -1)
+            {
+                removefd(this->m_epollfd, this->m_sockfd);
+                printf("cgi no exits,false!\n");
+                return false;
+                // break;
+            }
+            /* 创建子进程来执行CGI程序 */
+            int ret = fork();
+            if (ret == -1)
+            {
+                // removefd(this->m_epollfd, this->m_sockfd);
+                perror("fork fail!\n");
+                return false;
+            }
+            else if (ret == 0)
+            {
+                /* 子进程将标准输出定制到m_sockfd, 并执行CGI程序 */
+                // close(STDOUT_FILENO);
+                // dup(m_sockfd);
+                // execl(m_buf, m_buf, NULL);
+                close(STDOUT_FILENO);
+                if(dup(this->m_sockfd)<0)
+                {
+                    perror("dup error");
+                }
+                else
+                {
+                    if(strcasecmp(get_mime_type(m_real_file),"sh")==0)
+                    {
+                    send_header(this->fd, 200,"OK",get_mime_type("*.html"),0);/*不知道为什么执行cgi程序之前必须先给浏览器以响应,如果在cgi程序里面写的也有不行嘛？不理解--2024年3月7日18点08分*/
+                    execl(m_real_file,"cgi",NULL);
+                    }else
+                    {
+                         execl(m_real_file,"cgi",NULL);
+                    }                                                          /*其实是可以的,可能程序编写的时候http响应不符合要求.。要么提前发响应,要么在cgi程序里写--2024年3月7日18点32分*/
+                }
+                // execl("/bin/ls", "ls", "-l", NULL);  // 执行 ls -l 命令
+                exit(0);
+
+            }
+            else
+            {   
+                /* 父进程只需要关闭连接,不关闭的话用nc命令可以再次请求,不过最好关闭*/
+                removefd(this->m_epollfd, this->m_sockfd);
+                // break;
+                return false;
+                // return true;
+            }
         }
         default:
         {
@@ -816,17 +866,44 @@ UserEvent::HTTP_CODE UserEvent::do_request()
 {
     strcpy(m_real_file, doc_root);
     int len = strlen(doc_root);
-    char *strfile = m_url+1;
-    if (strfile[0] == '%' && isxdigit(strfile[1]) && isxdigit(strfile[2]))
+    char *strfile = m_url+1;    /*注意这个,如果请求的不是文件而是目录的话,会访问非法地址,导致段错误,所有判断return DIR_REQUEST;要在前面*/
+    printf("strfile ==************%s\n",strfile);
+    char *strtemp=strchr(strfile,'%');
+    printf("strtemp ==************%s\n",strtemp);
+    if(strtemp==NULL)
     {
-        printf("strfile[0] ==************\n");
-        strdecode(strfile,strfile);/*%E8%8B%A6%E7%93%9C格式乱码转换*/
+
     }
+    else
+    {    
+        if (strtemp[0] == '%' && isxdigit(strtemp[1]) && isxdigit(strtemp[2]))
+        {
+            printf("strfile[0] ==************\n");
+            strdecode(strtemp,strtemp);/*%E8%8B%A6%E7%93%9C格式乱码转换*/
+        }
+    }
+    // if (strfile[0] == '%' && isxdigit(strfile[1]) && isxdigit(strfile[2]))
+    // {
+    //     printf("strfile[0] ==************\n");
+    //     strdecode(strfile,strfile);/*%E8%8B%A6%E7%93%9C格式乱码转换*/
+    // }
     strncpy(m_real_file + len, m_url, FILENAME_LEN - len - 1);
-    printf("*****The m_real_file is %s\n",m_real_file);
+    printf("**stat before***The m_real_file is %s\n",m_real_file);
     if (stat(m_real_file, &m_file_stat) < 0)
     {
+        printf(" return NO_RESOURCE;\n");
         return NO_RESOURCE;
+    }
+ 
+    if (S_ISDIR(m_file_stat.st_mode))
+    {
+        return DIR_REQUEST;
+    }
+
+    printf("*****The m_real_file is %s\n",m_real_file);
+    if (strcasecmp(strrchr(strfile,'.'),".cgi")==0 || strcasecmp(strrchr(strfile,'.'),".sh")==0 )
+    {
+        return CGI_REQUEST;
     }
 
     if (!(m_file_stat.st_mode & S_IROTH))
@@ -834,10 +911,6 @@ UserEvent::HTTP_CODE UserEvent::do_request()
         return FORBIDDEN_REQUEST;
     }
 
-    if (S_ISDIR(m_file_stat.st_mode))
-    {
-        return DIR_REQUEST;
-    }
     int fd = open(m_real_file, O_RDONLY);
      printf("*****m_file_stat.st_size %ld\n",m_file_stat.st_size);
     m_file_address = (char *)mmap(0, m_file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);

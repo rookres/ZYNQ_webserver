@@ -45,7 +45,7 @@ void get_local_ip_addresses() {
             char ip[INET_ADDRSTRLEN];
 
             if (inet_ntop(AF_INET, &sa->sin_addr, ip, sizeof(ip))) {
-                printf("\n%s IP Address: %s\n", ifa->ifa_name, ip);
+                printf("%s IP Address: %s\n", ifa->ifa_name, ip);
             }
         } else if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET6) {
             // 类似处理IPv6地址
@@ -291,16 +291,22 @@ int udp4init(short port,const char *IP)
 }
 
 
-void Change_Dir(char*pwd_path)
+char* Change_Dir(char*pwd_path,const char*resource_path)
 {
-	char * path = getenv("PWD");//获取当前目录的工作路径
-	strcpy(pwd_path,path);
-	strcat(pwd_path,"/Resource");
-	if (chdir(pwd_path) != 0) 
+	if(resource_path==nullptr)
 	{
-		perror("Failed to change directory\n");
-		// 处理错误，例如退出程序或采取其他恢复措施
-		exit(EXIT_FAILURE);
+		return pwd_path;
+	}
+	else
+	{
+		strcat(pwd_path,resource_path);
+		if (chdir(pwd_path) != 0) 
+		{
+			perror("Failed to change directory");
+			// 处理错误，例如退出程序或采取其他恢复措施
+			exit(EXIT_FAILURE);
+		}
+		return pwd_path;
 	}
 }
 

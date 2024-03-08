@@ -7,7 +7,7 @@
 #define MAX_BUF_SIZE 1024
 #define MAX_USER_CLIENT 100
 
-const char* IP=NULL;
+const char* IP=NULL;    /*使用 webserver 127.1 8888来运行程序*/
 int epollfd;
 int pipefd[2];
 // threadpool <UserEvent> *pool=NULL;
@@ -182,9 +182,10 @@ int main()
     // signal(SIGPIPE,SIG_IGN); /*在Linux等类Unix系统中，默认情况下，当一个进程尝试向已经关闭了读端的TCP套接字写数据时，
     // 内核会向该进程发送一个SIGPIPE信号。如果进程没有捕获并处理这个信号，而是默认行为（终止进程），则服务端进程会被立即结束。*/
     get_local_ip_addresses();
-	char pwd_path[256]="";
-    Change_Dir(pwd_path);//切换需要的工作Resource目录
-    printf_DB("pwd_path:%s\n",pwd_path);
+	// char pwd_path[256]="";
+    // char * pwd_path = getenv("PWD");//获取当前目录的工作路径
+    // Change_Dir(getenv("PWD"),"/Resource");//切换需要的工作Resource目录
+    printf_DB("pwd_path:%s\n",Change_Dir(getenv("PWD"),"/Resource"));
 
     //     /* 创建线程池 */
     // threadpool <UserEvent> *pool = new threadpool<UserEvent>;
@@ -308,9 +309,16 @@ int main()
                                     printf_DB("\nRecive SIGHUP\n");
                                     break;
                                 }
-                                case SIGCHLD:
+                                case SIGCHLD: /*此处回收的主要是由主进程fork产生的子进程执行excel的*/
                                 {
-                                    printf_DB("\nRecive SIGCHLD\n");
+                                    printf_DB("\nRecive SIGCHLD\n");                                    
+                                    pid_t pid;
+                                    int stat;
+                                    while ((pid = waitpid(-1, &stat, WNOHANG)) > 0)/*原来是==。我改成了=。觉得是书写错误、 --by le*/
+                                    {
+                                        printf("Handle SIGCHLD signal over\n"); 
+                                        continue;
+                                    }
                                     break;
                                 }
                                 case SIGQUIT:

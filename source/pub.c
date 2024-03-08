@@ -46,6 +46,10 @@ const char *get_mime_type(const char *name)
         return "audio/mpeg";
     if (strcmp(dot, ".mp4") == 0)
         return "video/mp4";
+    if (strcmp(dot, ".cgi") == 0)   //自己添的,不一定对,反正此程序就是据此判断的
+        return "cgi";
+    if (strcmp(dot, ".sh") == 0)   //自己添的,不一定对,反正此程序就是据此判断的
+        return "sh";
     if (strcmp(dot, ".ogg") == 0)
         return "application/ogg";
     if (strcmp(dot, ".pac") == 0)

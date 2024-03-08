@@ -13,6 +13,7 @@
 #include <ifaddrs.h>
 #include "pub.h"
 #include "UserEvent.hpp"
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -78,7 +79,7 @@ int udp4init(short port,const char *IP);
 void udp_write();
 void UDP_Handle(int udpfd);
 
-void Change_Dir(char*pwd_path);
+char* Change_Dir(char*pwd_path,const char*resource_path=nullptr);
 
 
 

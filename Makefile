@@ -49,7 +49,7 @@ $(TARGET):$(OBJS)
 	@mkdir -p $(BUILD_DIR)
 	@$(CC) $(OBJS) $(LIB_PATH) $(LIB_NAMES) -o $(BUILD_DIR)/$(TARGET)$(VERSION)
 	@echo "***The Compile Successful***"
-	@echo "***The Final Executable File in $(BUILD_DIR)/$(TARGET)***"
+	@echo "***The Final Executable File in ./$(BUILD_DIR)/$(TARGET)***"
 
 #compile编译
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
