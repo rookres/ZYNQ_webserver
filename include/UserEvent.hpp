@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sys/epoll.h>
 #include "heap_timer.hpp"
+#include "threadpool_adjust.hpp"
 #include <unistd.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -28,8 +29,10 @@ class UserEvent;//前置声明
 
 using std::cout;
 using std::endl;
-using readHandle = void(*)(UserEvent *, ITimerContainer<UserEvent> *);
+using readHandle = void(*)(UserEvent *, ITimerContainer<UserEvent> *,threadpool <UserEvent>*);
 using writeHandle = void(*)(UserEvent *, ITimerContainer<UserEvent> *);
+void readData(UserEvent *Uev, ITimerContainer<UserEvent> *htc,threadpool <UserEvent> *pool);
+void writeData(UserEvent *Uev, ITimerContainer<UserEvent> *htc);
 // 自定义结构体，用来保存一个连接的相关数据
 class UserEvent
 {
@@ -165,4 +168,6 @@ private:
     int m_iv_count;
 
 };
+
+
 #endif

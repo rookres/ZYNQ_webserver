@@ -29,39 +29,12 @@
 #endif
 
 #define UDP_BUFFER_SIZE 1024
+#define MAX_USER_CLIENT 100
 /*TCP UDP something related*/
 void err_exit(const char *reason,bool ExitFlag=true);
 
 int Accept(int fd,char* ip,uint16_t* port);
 int Accept(int fd,sockaddr_in &sa);
-/****************************************************************************/
-/**
-* 获取本地所有的IP地址.
-*
-* @param	InstancePtr is a pointer to the XGpioPs instance.
-* @param	Pin is the pin number to which the Data is to be written.
-*		Valid values are 0-117 in Zynq and 0-173 in Zynq Ultrascale+ MP.
-* @param	Data is the data to be written to the specified pin (0 or 1).
-*
-* @return	None.
-*
-* @note		This function does a masked write to the specified pin of
-*		the specified GPIO bank. The previous state of other pins
-*		is maintained.
-*
-*****************************************************************************/
-/*----------------------------上面用来写其他函数介绍------------------------------------------------*/
-
-/****************************************************************************/
-/**
-* 
-* @param	void 无.
-
-* @return   None.
-*
-* @note		获取本地所有的IP地址.
-*
-*****************************************************************************/
 void get_local_ip_addresses();
 int Bind(int fd, const struct sockaddr *sa, socklen_t salen);
 int Connect(int fd, const struct sockaddr *sa, socklen_t salen);
@@ -81,15 +54,16 @@ void UDP_Handle(int udpfd);
 
 char* Change_Dir(char*pwd_path,const char*resource_path=nullptr);
 
-
-
+void show_error(int connfd, const char *info);
+void sig_handler(int signum);
+int add_sig(int sig, void ( handler ) (int), bool restart = true) ;
 /*epoll something related*/
 int setnonblocking( int fd );
 void epoll_addfd( int &epollfd, int &fd );
 void epoll_rmfd(int &epollfd,int fd);
-
-
-
+void pipefd_handle(int *pipefd,char*sigbuf,short sigbuf_len,bool &running );
+void acceptConn(UserEvent *ev, ITimerContainer<UserEvent> *htc);
+void timeout_handle(UserEvent *cli);
 /*Handle Client Something*/
 void read_client_request(UserEvent *Uev);
 void send_header(int cfd, int code,const char *info,const char *filetype,int length);

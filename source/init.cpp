@@ -1,5 +1,6 @@
 #include "init.hpp"
-
+extern void addfd(UserEvent *Uev, bool one_shot);
+extern int pipefd[2];
 void err_exit(const char *reason,bool ExitFlag)
 {
 	char err[128];
@@ -10,6 +11,29 @@ void err_exit(const char *reason,bool ExitFlag)
 	// perror(s);
 	if(ExitFlag)
 		exit(-1);
+}
+
+void sig_handler(int signum)
+{
+    /* 保留原来的 errno，在函数最后恢复，以保证函数的可重入性 */
+    int save_errno = errno;
+    char sig = (char) signum;
+    Write(pipefd[1], &sig, 1); /* 将信号值写入管道，以通知主循环 */
+    errno = save_errno;
+
+}
+
+int add_sig(int sig, void ( handler ) (int), bool restart )   /*void (handler)(int)和void (*handler)(int)是同一个函数指针类型的声明。*/
+{
+    struct sigaction sa;
+    memset(&sa, '\0', sizeof(sa));
+    sa.sa_handler = handler;
+    if (restart)
+    {
+        sa.sa_flags |= SA_RESTART;  /*为了确保当信号发生时，被信号打断的系统调用能够从被打断的地方重新开始，而不是直接返回错误并终止系统调用的执行*/
+    }
+    sigfillset(&sa.sa_mask);
+    return sigaction(sig, &sa, nullptr);
 }
 
 int Accept(int fd,char* ip,uint16_t* port)
@@ -409,6 +433,112 @@ void send_file(int epfd,int cfd,const char *path,bool flag)
 			close(cfd);
 			epoll_ctl(epfd,EPOLL_CTL_DEL,cfd,NULL);
 		}
+}
+
+void pipefd_handle(int *pipefd,char*sigbuf,short sigbuf_len,bool &running )
+{
+    memset(sigbuf,'\0',sigbuf_len);
+    int n = read(pipefd[0], sigbuf, sigbuf_len);
+    if(n < 0)
+    {
+        cout << "deal read signal error:" << strerror(errno) << endl;
+        // continue; 
+        return;
+    }
+    else if(n > 0)
+    {
+        for(int i = 0; i < n; i++)
+        {
+            switch (sigbuf[i])
+            {
+                case SIGINT:
+                {                            
+                    running = false;
+                    printf_DB("\nRecive SIGINT,the server STOP!!!\n");
+                    break;
+                }
+                case SIGTERM:
+                {
+                    printf_DB("\nRecive SIGTERM\n");
+                    break;
+                }
+                case SIGHUP:
+                {
+                    printf_DB("\nRecive SIGHUP\n");
+                    break;
+                }
+                case SIGCHLD: /*此处回收的主要是由主进程fork产生的子进程执行excel的*/
+                {
+                    printf_DB("\nRecive SIGCHLD\n");                                    
+                    pid_t pid;
+                    int stat;
+                    while ((pid = waitpid(-1, &stat, WNOHANG)) > 0)/*回收子进程资源*/
+                    {
+                        printf("Handle SIGCHLD signal over\n"); 
+                        continue;
+                    }
+                    break;
+                }
+                case SIGQUIT:
+                {
+                    printf_DB("\nRecive SIGQUIT\n");
+                    break;
+                }
+            }
+        }
+    }
+}
+// 超时处理的回调函数
+void timeout_handle(UserEvent *cli)
+{
+    if(cli == nullptr)
+    { return ;}
+
+    // send_header(cli->fd, 200,"OK",get_mime_type("*.html"),0);
+    send_file(cli->m_epollfd,cli->fd,"timeout.html",0);
+
+    // cout << "Connection time out " << " ip:[" << cli->ip << ":" << cli->port << "]" << endl;
+    // char reply[]="Sorry,Your Connection TimeOut,You Will Be Kick Out,!_!\nSee Ya Soon!!!!\n";
+    // Write(cli->fd,reply,sizeof(reply));
+    epoll_ctl(cli->m_epollfd, EPOLL_CTL_DEL, cli->fd, NULL);
+    close(cli->fd);
+    UserEvent::m_user_count--;
+    delete cli;
+}
+
+void show_error(int connfd, const char *info)
+{
+    printf("%s", info);
+    send(connfd, info, strlen(info), 0);
+    close(connfd);
+}
+// 接收连接回调函数
+void acceptConn(UserEvent *ev, ITimerContainer<UserEvent> *htc)
+{
+    struct sockaddr_in sa;
+    int newcfd = Accept(ev->fd,sa);//接受连接并获取客户端ip和端口信息
+    if (UserEvent::m_user_count >= MAX_USER_CLIENT)
+    {
+        show_error(newcfd, "Internal server busy,m_user_count >= MAX_USER_CLIENT\n");
+        return;
+    }
+    UserEvent *cli = new UserEvent;
+    // setnonblocking(newcfd);          //设置非阻塞
+    cli->init(newcfd,sa,readData,writeData);
+
+    auto timer = htc->addTimer(30000);      //设置客户端超时值30秒
+    timer->setUserData(cli);
+    timer->setCallBack(timeout_handle);
+    cli->timer = (void *)timer;
+
+    addfd(cli, true);
+    // cli->event.events = EPOLLIN;
+    // cli->event.data.ptr = (void *) cli;
+    // epoll_ctl(epollfd, EPOLL_CTL_ADD, newcfd, &cli->event);
+
+    cout << "New Connection, ip:[" << cli->ip << ":" << cli->port << "]" << endl;
+    // printf_DB("new client ip=%s port=%u\n",cli->ip,cli->port);
+
 }
 
 void read_client_request(UserEvent *Uev)

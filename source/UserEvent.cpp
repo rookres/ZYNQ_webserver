@@ -614,8 +614,8 @@ bool UserEvent::process_write(HTTP_CODE ret)
                 free(mylist[i]);
             }
             free(mylist);
-            send_file(this->m_epollfd,this->fd,"dir_tail.html");
-            return false;/*此处设为fasle,而不是true,浏览器就不会转圈了*/
+            send_file(this->m_epollfd,this->fd,"dir_tail.html",false);
+            return true;/*此处设为fasle,而不是true,浏览器就不会转圈了*/
             // break;
         }
         case CGI_REQUEST:
@@ -1025,4 +1025,56 @@ bool UserEvent::add_blank_line()
 bool UserEvent::add_content(const char *content)
 {
     return add_response("%s", content);
+}
+
+
+void readData(UserEvent *Uev, ITimerContainer<UserEvent> *htc,threadpool <UserEvent> *pool)
+{
+     /* 根据读的结果，决定是将任务加到线程池，还是关闭连接 */
+    if(Uev->read())
+    {
+         pool->append(Uev);         
+    }
+    else
+    {
+        cout << "\nUev->read()\n"<< endl;
+        Uev->close_conn();            //当关闭连接时,应该删除定时器,与时间关联起来
+        htc->delTimer((Timer<UserEvent> *)Uev->timer);
+        delete Uev;
+    }
+
+}
+
+void writeData(UserEvent *Uev, ITimerContainer<UserEvent> *htc)
+{
+    // //判断是否为get请求  get   GET
+	// if(strcasecmp(Uev->method,"get") == 0)
+	//  {
+    //     cout << "strcasecmp"<< endl;
+	// 	Get_Handle(epollfd,Uev);
+	//  }
+    // else
+    // {
+    //     char buf[512]={'\0'};
+    //     sprintf(buf,"No Get Request,Only Reply Same Message\nThe Server Reply:%s",Uev->method);
+    //     Write(Uev->fd, buf, sizeof(buf));
+    // }
+
+
+        /* 根据写的结果，决定是否关闭连接 */
+    if (!Uev->write())
+    {
+        cout << "\nUev->write Fasle\n"<< endl;
+        Uev->close_conn();            //当关闭连接时,应该删除定时器,与时间关联起来
+        htc->delTimer((Timer<UserEvent> *)Uev->timer);
+        delete Uev;
+    }
+    // send_file(Uev->m_epollfd,Uev->fd,Uev->real_file,0);
+    // Uev->event.events = EPOLLIN;
+    // epoll_ctl(epollfd, EPOLL_CTL_MOD, Uev->fd, &Uev->event);
+    else
+    {    cout << "resetTimer\n"<< endl;
+     // 重新设置定时器
+        htc->resetTimer((Timer<UserEvent> *)Uev->timer, 15000);
+    }
 }
