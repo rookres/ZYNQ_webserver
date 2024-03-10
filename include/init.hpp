@@ -32,11 +32,9 @@
 #define MAX_USER_CLIENT 100
 /*TCP UDP something related*/
 void err_exit(const char *reason,bool ExitFlag=true);
-
-int Accept(int fd,char* ip,uint16_t* port);
-int Accept(int fd,sockaddr_in &sa);
 void get_local_ip_addresses();
 int Bind(int fd, const struct sockaddr *sa, socklen_t salen);
+int Accept(int fd,sockaddr_in &sa);
 int Connect(int fd, const struct sockaddr *sa, socklen_t salen);
 int Listen(int fd, int backlog);
 int Socket(int family, int type, int protocol);
@@ -49,7 +47,6 @@ ssize_t Writen(int fd, const void *vptr, size_t n);
 ssize_t Readline(int fd, void *vptr, size_t maxlen);
 int tcp4init(short port,const char *IP,short backlog,bool reuseAddr=true);
 int udp4init(short port,const char *IP);
-void udp_write();
 void UDP_Handle(int udpfd);
 
 char* Change_Dir(char*pwd_path,const char*resource_path=nullptr);
@@ -59,14 +56,13 @@ void sig_handler(int signum);
 int add_sig(int sig, void ( handler ) (int), bool restart = true) ;
 /*epoll something related*/
 int setnonblocking( int fd );
-void epoll_addfd( int &epollfd, int &fd );
-void epoll_rmfd(int &epollfd,int fd);
+void addfd(UserEvent *Uev, bool one_shot);
+void modfd(int ev,UserEvent *Uev=NULL);
+void removefd(int &epollfd, int &fd);
 void pipefd_handle(int *pipefd,char*sigbuf,short sigbuf_len,bool &running );
 void acceptConn(UserEvent *ev, ITimerContainer<UserEvent> *htc);
 void timeout_handle(UserEvent *cli);
 /*Handle Client Something*/
-void read_client_request(UserEvent *Uev);
 void send_header(int cfd, int code,const char *info,const char *filetype,int length);
 void send_file(int epfd,int cfd,const char *path,bool flag=false);
-// void Get_Handle(int epfd,UserEvent *Uev) ;
 #endif

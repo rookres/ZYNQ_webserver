@@ -169,7 +169,7 @@ HeapTimerContainer<_UData>::~HeapTimerContainer()
 template <typename _UData>
 void HeapTimerContainer<_UData>::tick()
 {
-   std::cout << "----------tick----------" << std::endl;
+//    std::cout << "----------tick----------" << std::endl;
     HeapTimer<_UData> *tmp = _array[0];
     time_t cur = getMSec();
     // 循环处理到期的定时器

@@ -1,5 +1,4 @@
 #include "init.hpp"
-// #include "threadpool_adjust.hpp"
 
 #define BUFFER_SIZE 1024
 #define MAX_EVENT_NUMBER 1024
@@ -9,26 +8,23 @@
 int epollfd;
 int pipefd[2];
 
-// int main(int argc, char *argv[])
-// {
-    // if (argc < 2)
-    // {
-    //     printf("usage: %s ip_address port_number\n", basename(argv[0])); 
-    //     return -1;
-    // }
-    // const char *IP = argv[1];
-    // short PORT = atoi(argv[2]);
-    /*上面的int main我觉得每次调试麻烦,直接写死了,之后还是要解开注释*/
-int main()
+int main(int argc, char *argv[])
 {
-    const char *IP =NULL;
-    short PORT = 8888;
+    if (argc < 2)
+    {
+        printf("usage: %s ip_address port_number\n", basename(argv[0])); 
+        return -1;
+    }
+    const char *IP = argv[1];
+    short PORT = atoi(argv[2]);
+    // const char *IP =NULL;
+    // short PORT = 8888;
 
     printf_DB("hello,world,the program start 2024年2月21日19点40分\n" );
     printf_DB("The main pid is %d\n",getpid());
     get_local_ip_addresses();                                           /*获取本地的ens33 ip地址,以便用于浏览器快速访问*/
-    printf_DB("pwd_path:%s\n",Change_Dir(getenv("PWD"),"/Resource"));/*获取当前目录的工作路径,并切换需要的工作Resource目录*/
-   threadpool <UserEvent> *pool = new threadpool<UserEvent>; /* 创建线程池 */
+    printf("pwd_path:%s\n",Change_Dir(getenv("PWD"),"/Resource"));/*获取当前目录的工作路径,并切换需要的工作Resource目录*/
+    threadpool <UserEvent> *pool = new threadpool<UserEvent>; /* 创建线程池 */
     /* 设置(注册)一些信号的处理函数 */
     if(add_sig(SIGINT,sig_handler) < 0)
         err_exit("add sig error");
@@ -77,9 +73,9 @@ int main()
     epoll_ctl(epollfd, EPOLL_CTL_ADD, sfd, &TCPServer.event);
     epoll_ctl(epollfd, EPOLL_CTL_ADD, udpfd, &UDPServer.event);
     epoll_ctl(epollfd, EPOLL_CTL_ADD, pipefd[0], &SigEvent.event);
-    cout << "------ Create TimerContainer ------" << endl;
+    printf_DB( "------ Create TimerContainer ------");
     ITimerContainer<UserEvent> *htc = new HeapTimerContainer<UserEvent>;
-    cout << "------ Create TimerContainer over ------" << endl;
+    printf_DB(  "------ Create TimerContainer over ------");
     epoll_event events[MAX_EVENT_NUMBER];//最大监听数目
     int timeout = 10000;      //如果没有连接，则设置超时值默认为10秒
     char sigbuf[64] = {0};
@@ -93,8 +89,9 @@ int main()
         并设置到epoll里面，epoll超时未检测到，则必有定时器过期，然后执行tick()函数,也就是说将超时时间作为心动间隔*/
         int epolltimeout = (min_expire == -1) ? timeout : min_expire - getMSec();
         int epoll_number = epoll_wait(epollfd,events,MAX_EVENT_NUMBER,epolltimeout);
-        if(epoll_number < 0) /*其实这个应该不判断，或者判断完不退出，否则无法统一SINGINT或SIGTERM,
-                            因为程序大部分时间都消耗在epoll_wait上,此函数会返回-1，虽然调用了sig_handler函数写进pipefd里面，但来不及判断pipefd就退出了*/
+        /*其实这个应该不判断，或者判断完不退出，否则无法统一SINGINT或SIGTERM,
+        因为程序大部分时间都消耗在epoll_wait上,此函数会返回-1，虽然调用了sig_handler函数写进pipefd里面，但来不及判断pipefd就退出了*/
+        if(epoll_number < 0) 
         { err_exit("\nepoll failure",false);}
         else if(epoll_number > 0)
         {
@@ -141,8 +138,6 @@ int main()
               htc->tick();
         }
 }
-
-
 
     return 0;
 }

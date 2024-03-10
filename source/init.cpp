@@ -1,14 +1,13 @@
 #include "init.hpp"
 extern void addfd(UserEvent *Uev, bool one_shot);
 extern int pipefd[2];
+
+/*用来判断函数调用返回值,错误则退出,默认退出结束进程*/
 void err_exit(const char *reason,bool ExitFlag)
 {
 	char err[128];
-	// char *strerror_r(int errnum, char *buf, size_t buflen);
-	// cout << reason << ":" << strerror(errno) << endl;
+	/*strerror_r用于一般用于多线程中,防止竞态条件*/
 	printf("%s:%s\n",reason,strerror_r(errno,err,128));
-    // exit(1);
-	// perror(s);
 	if(ExitFlag)
 		exit(-1);
 }
@@ -36,39 +35,12 @@ int add_sig(int sig, void ( handler ) (int), bool restart )   /*void (handler)(i
     return sigaction(sig, &sa, nullptr);
 }
 
-int Accept(int fd,char* ip,uint16_t* port)
-{
-	int n;
-	struct sockaddr_in sa;
-	socklen_t salenptr = sizeof(sa);
-again:
-	if ((n = accept(fd, (struct sockaddr*)&sa, &salenptr)) < 0) {
-		if ((errno == ECONNABORTED) || (errno == EINTR))//如果是被信号中断和软件层次中断,不能退出
-			goto again;
-		else
-			err_exit("accept error");
-	}
-	inet_ntop(AF_INET,&sa.sin_addr.s_addr,ip,16);
-	*port=ntohs(sa.sin_port);
-	// printf_DB("new client ip=%s port=%d\n",inet_ntop(AF_INET,&sa.sin_addr.s_addr,ips,16),ntohs(sa.sin_port));
-	return n;
-}
-
-/****************************************************************************/
-/**
-* 获取本地所有的IP地址.
-*
-* @param	None.
-* @return	None.
-*
-* @note		只显示了ipv4的，ipv6的没做处理.
-*
-*****************************************************************************/
+/*获取本地所有的IP地址,只显示了ipv4的，ipv6的没做处理.*/
 void get_local_ip_addresses() {
     struct ifaddrs *ifap, *ifa;
 
     if (getifaddrs(&ifap) == -1) {
-        perror("getifaddrs");
+		err_exit("getifaddrs");
         return;
     }
 
@@ -78,20 +50,18 @@ void get_local_ip_addresses() {
             char ip[INET_ADDRSTRLEN];
 
             if (inet_ntop(AF_INET, &sa->sin_addr, ip, sizeof(ip))) {
-                printf("%s IP Address: %s\n", ifa->ifa_name, ip);
+                printf_DB("%s IP Address: %s\n", ifa->ifa_name, ip);
             }
         } else if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET6) {
             // 类似处理IPv6地址
         }
     }
-
     freeifaddrs(ifap);
 }
-
+/*接受连接并通过sockaddr_in &sa引用返回端口和ip*/
 int Accept(int fd,sockaddr_in &sa)
 {
 	int n;
-	// struct sockaddr_in sa;
 	socklen_t salenptr = sizeof(sa);
 again:
 	if ((n = accept(fd, (struct sockaddr*)&sa, &salenptr)) < 0) {
@@ -101,10 +71,9 @@ again:
 			err_exit("accept error");
 	}
 
-	// printf_DB("new client ip=%s port=%d\n",inet_ntop(AF_INET,&sa.sin_addr.s_addr,ips,16),ntohs(sa.sin_port));
 	return n;
 }
-
+/*绑定端口和地址*/
 int Bind(int fd, const struct sockaddr *sa, socklen_t salen)
 {
     int n;
@@ -334,18 +303,12 @@ char* Change_Dir(char*pwd_path,const char*resource_path)
 		strcat(pwd_path,resource_path);
 		if (chdir(pwd_path) != 0) 
 		{
-			perror("Failed to change directory");
+			err_exit("Failed to change directory");
 			// 处理错误，例如退出程序或采取其他恢复措施
 			exit(EXIT_FAILURE);
 		}
 		return pwd_path;
 	}
-}
-
-void  udp_write()
-{
-	//udp写的话需要ip和端口地址，最好用sendto,收也要是recvfrom等等，先放着,
-	//看LinuxServerCodesLinux(源码)高性能服务器编程游双9-8multi_port.cpp,有读写
 }
 
 void UDP_Handle(int udpfd)
@@ -374,20 +337,30 @@ int setnonblocking( int fd )
     return old_option;
 }
 
-void epoll_addfd( int &epollfd, int &fd )
+
+void addfd(UserEvent *Uev, bool one_shot)
 {
-    epoll_event event;
-    event.data.fd = fd;
-    //event.events = EPOLLIN | EPOLLET;
-    event.events = EPOLLIN;
-    epoll_ctl( epollfd, EPOLL_CTL_ADD, fd, &event );
-    setnonblocking( fd );
+
+     Uev->event.data.ptr = (void *) Uev;
+    Uev->event.events=EPOLLIN | EPOLLET | EPOLLRDHUP;
+    if (one_shot)
+    {
+         Uev->event.events |= EPOLLONESHOT;
+    }
+    epoll_ctl(UserEvent::m_epollfd, EPOLL_CTL_ADD, Uev->fd,&Uev->event);
+    setnonblocking(Uev->fd);
 }
 
-void epoll_rmfd(int &epollfd,int fd)
+void modfd(int ev,UserEvent *Uev)
 {
-		epoll_ctl(epollfd,EPOLL_CTL_DEL,fd,NULL);
-	 	close(fd);
+    Uev->event.events = ev | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;
+    epoll_ctl(UserEvent::m_epollfd, EPOLL_CTL_MOD, Uev->m_sockfd, &Uev->event);
+}
+
+void removefd(int &epollfd, int &fd)
+{
+    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, 0);
+    close(fd);
 }
 
 
@@ -441,8 +414,7 @@ void pipefd_handle(int *pipefd,char*sigbuf,short sigbuf_len,bool &running )
     int n = read(pipefd[0], sigbuf, sigbuf_len);
     if(n < 0)
     {
-        cout << "deal read signal error:" << strerror(errno) << endl;
-        // continue; 
+		err_exit( "deal read signal error:",false);
         return;
     }
     else if(n > 0)
@@ -474,7 +446,7 @@ void pipefd_handle(int *pipefd,char*sigbuf,short sigbuf_len,bool &running )
                     int stat;
                     while ((pid = waitpid(-1, &stat, WNOHANG)) > 0)/*回收子进程资源*/
                     {
-                        printf("Handle SIGCHLD signal over\n"); 
+                        printf_DB("Handle SIGCHLD signal over\n"); 
                         continue;
                     }
                     break;
@@ -494,14 +466,10 @@ void timeout_handle(UserEvent *cli)
     if(cli == nullptr)
     { return ;}
 
-    // send_header(cli->fd, 200,"OK",get_mime_type("*.html"),0);
-    send_file(cli->m_epollfd,cli->fd,"timeout.html",0);
-
-    // cout << "Connection time out " << " ip:[" << cli->ip << ":" << cli->port << "]" << endl;
-    // char reply[]="Sorry,Your Connection TimeOut,You Will Be Kick Out,!_!\nSee Ya Soon!!!!\n";
-    // Write(cli->fd,reply,sizeof(reply));
-    epoll_ctl(cli->m_epollfd, EPOLL_CTL_DEL, cli->fd, NULL);
-    close(cli->fd);
+    send_header(cli->fd, 200,"OK",get_mime_type("*.html"),0);
+    send_file(cli->m_epollfd,cli->fd,"timeout.html",true);
+	cli->read_cb=nullptr;
+	cli->write_cb=nullptr;
     UserEvent::m_user_count--;
     delete cli;
 }
@@ -523,107 +491,13 @@ void acceptConn(UserEvent *ev, ITimerContainer<UserEvent> *htc)
         return;
     }
     UserEvent *cli = new UserEvent;
-    // setnonblocking(newcfd);          //设置非阻塞
     cli->init(newcfd,sa,readData,writeData);
 
-    auto timer = htc->addTimer(30000);      //设置客户端超时值30秒
+    auto timer = htc->addTimer(15000);      //设置客户端超时值15秒
     timer->setUserData(cli);
     timer->setCallBack(timeout_handle);
     cli->timer = (void *)timer;
-
     addfd(cli, true);
-    // cli->event.events = EPOLLIN;
-    // cli->event.data.ptr = (void *) cli;
-    // epoll_ctl(epollfd, EPOLL_CTL_ADD, newcfd, &cli->event);
-
-    cout << "New Connection, ip:[" << cli->ip << ":" << cli->port << "]" << endl;
-    // printf_DB("new client ip=%s port=%u\n",cli->ip,cli->port);
+    printf_DB("New Connection, ip:[%s:port=%u\n]",cli->ip,cli->port);
 
 }
-
-void read_client_request(UserEvent *Uev)
-{
-		//读取请求(先读取第一行)
-	char buf[1024]="";
-	char tmp[1024]="";
-	Readline(Uev->fd, buf, sizeof(buf));
-	printf_DB("The first line:%s",buf);
-	int ret =0;
-	 /*把其他行读取,暂时扔掉，之后加有限状态机解析后面的行*/
-	 while( (ret = Readline(Uev->fd, tmp, sizeof(tmp))) >0)
-	 {
-		printf_DB("%s",tmp);  
-	 }
-	 //解析请求行  GET /a.txt  HTTP/1.1\R\N
-	//  char method[256]="",content[256]="", protocol[256]="";
-	 sscanf(buf,"%[^ ] %[^ ] %[^ \r\n]",Uev->method,Uev->content,Uev->protocol);
-	 printf_DB("method:%s\ncontent:%s\nprotocol:%s\n",Uev->method,Uev->content,Uev->protocol);
-
-}
-
-// void Get_Handle(int epfd,UserEvent *Uev) 
-// {
-// 	//[GET]  [/%E8%8B%A6%E7%93%9C.txt]  [HTTP/1.1]
-// 	 		char *strfile = Uev->content+1;
-// 			if (strfile[0] == '%' && isxdigit(strfile[1]) && isxdigit(strfile[2]))
-// 			{
-// 				strdecode(strfile,strfile);/*%E8%8B%A6%E7%93%9C格式乱码转换*/
-// 			}
-// 	 		 //GET / HTTP/1.1\R\N
-// 	 		if(*strfile == 0)		//如果没有请求文件,默认请求当前目录
-// 	 			strfile= "./";
-// 				// strfile= "./index.html";
-// 	 		//判断请求的文件是否存在
-// 	 		struct stat s;
-			
-// 	 		if(stat(strfile,&s) < 0)//文件不存在
-// 	 		{
-// 	 			printf_DB("file not found\n");
-// 	 			//先发送 报头(状态行  消息头  空行)
-// 	 			send_header(Uev->fd, 404,"NOT FOUND",get_mime_type("*.html"),0);
-// 	 			//发送文件 error.html
-// 	 			send_file(epfd,Uev->fd,"error.html");
-
-// 	 		}
-// 	 		else
-// 	 		{	 //请求的是一个普通的文件
-// 	 			if(S_ISREG(s.st_mode))
-// 	 			{
-// 	 				printf_DB("file\n");
-// 	 				//先发送 报头(状态行  消息头  空行)
-// 	 				send_header(Uev->fd, 200,"OK",get_mime_type(strfile),s.st_size);
-// 	 				//发送文件
-// 	 				send_file(epfd,Uev->fd,strfile);
-// 	 			}
-// 	 			else if(S_ISDIR(s.st_mode))//请求的是一个目录
-// 	 			{
-// 						printf_DB("dir\n");
-// 						//发送一个列表  网页
-// 						send_header(Uev->fd, 200,"OK",get_mime_type("*.html"),0);
-// 						//发送header.html
-// 						send_file(epfd,Uev->fd,"dir_header.html");
-
-// 						struct dirent **mylist=NULL;
-// 						char buf[1024]="";
-// 						int len =0;
-// 						int n = scandir(strfile,&mylist,NULL,alphasort);
-// 						for(int i=0;i<n;i++)
-// 						{
-// 							//printf("%s\n", mylist[i]->d_name);
-// 							if(mylist[i]->d_type == DT_DIR)//如果是目录
-// 							{
-// 								len = sprintf(buf,"<li><a href=%s/ >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
-// 							}
-// 							else
-// 							{
-// 								len = sprintf(buf,"<li><a href=%s >%s</a></li>",mylist[i]->d_name,mylist[i]->d_name);
-// 							}
-
-// 							send(Uev->fd,buf,len ,0);
-// 							free(mylist[i]);
-// 						}
-// 						free(mylist);
-// 						send_file(epfd,Uev->fd,"dir_tail.html");
-// 	 			}
-// 	 		}
-// }			

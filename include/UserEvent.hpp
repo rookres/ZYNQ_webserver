@@ -21,8 +21,6 @@
 #include <sys/uio.h>
 // #include "locker.h"     /*第十四章介绍的线程同步机制的包装类*/
 
-
-
 #define MAX_BUF_SIZE 512
 
 class UserEvent;//前置声明
@@ -41,15 +39,9 @@ public:
     char ip[32];
     uint16_t port;
     epoll_event event; 
-    
     void *timer;
-
-    char buf[MAX_BUF_SIZE];
-    int buf_size;
-    char method[256]="",content[256]="", protocol[256]="";
     readHandle read_cb;
     writeHandle write_cb;
-    char reflect_method[256]={'\0'};//此用于反射服务器
 
  public:
     /* 文件名的最大长度 */

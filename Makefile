@@ -13,6 +13,7 @@ VERSION 	=
 CC		=g++
 # CC			=arm-linux-gnueabi-g++
 DEBUG 		=-DUSE_DEBUG -g
+# DEBUG 		=
 CFLAGS		=-Wall -Wextra -O3
 # CFLAGS		=-W
 INCLUDES  	=-I./$(INC_DIR)
