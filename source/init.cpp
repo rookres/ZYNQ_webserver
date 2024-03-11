@@ -498,6 +498,6 @@ void acceptConn(UserEvent *ev, ITimerContainer<UserEvent> *htc)
     timer->setCallBack(timeout_handle);
     cli->timer = (void *)timer;
     addfd(cli, true);
-    printf_DB("New Connection, ip:[%s:port=%u\n]",cli->ip,cli->port);
+    printf_DB("New Connection, ip:[%s:port=%u]\n",cli->ip,cli->port);
 
 }

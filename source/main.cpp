@@ -73,9 +73,9 @@ int main(int argc, char *argv[])
     epoll_ctl(epollfd, EPOLL_CTL_ADD, sfd, &TCPServer.event);
     epoll_ctl(epollfd, EPOLL_CTL_ADD, udpfd, &UDPServer.event);
     epoll_ctl(epollfd, EPOLL_CTL_ADD, pipefd[0], &SigEvent.event);
-    printf_DB( "------ Create TimerContainer ------");
+    printf_DB( "------ Create TimerContainer ------\n");
     ITimerContainer<UserEvent> *htc = new HeapTimerContainer<UserEvent>;
-    printf_DB(  "------ Create TimerContainer over ------");
+    printf_DB(  "------ Create TimerContainer over ------\n");
     epoll_event events[MAX_EVENT_NUMBER];//最大监听数目
     int timeout = 10000;      //如果没有连接，则设置超时值默认为10秒
     char sigbuf[64] = {0};
