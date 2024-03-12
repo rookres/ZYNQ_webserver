@@ -12,6 +12,7 @@ BUILD_DIR 	:= build
 VERSION 	=
 CC		=g++
 # CC			=arm-linux-gnueabi-g++
+# CC		=arm-xilinx-linux-gnueabi-g++
 DEBUG 		=-DUSE_DEBUG -g
 # DEBUG 		=
 CFLAGS		=-Wall -Wextra -O3
